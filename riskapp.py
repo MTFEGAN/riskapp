@@ -343,8 +343,8 @@ def main():
         # Step 5: Process User Input Positions
 
         # Convert positions_data to the required format
-        positions_data_dm = positions_data_dm.astype({'Outright': float, 'Curve': float, 'Spread': float})
-        positions_data_em = positions_data_em.astype({'Outright': float, 'Curve': float, 'Spread': float})
+        positions_data_dm = pd.DataFrame(positions_data_dm).astype({'Outright': float, 'Curve': float, 'Spread': float})
+        positions_data_em = pd.DataFrame(positions_data_em).astype({'Outright': float, 'Curve': float, 'Spread': float})
 
         # Combine DM and EM positions
         positions_data_dm['Portfolio'] = 'DM'
