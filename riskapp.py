@@ -3,17 +3,15 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from collections import OrderedDict
-
-# Import necessary libraries for data fetching
-from quantderivstrat.vendors.bloomberg.api import API
+import os
 
 # Import AgGrid for advanced data grid features
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
 def main():
     # Set page configuration to use the full width
-    st.set_page_config(page_title="BMIX Portfolio Risk Attribution", layout="wide")
-    st.title('BMIX Portfolio Risk Attribution')
+    st.set_page_config(page_title="Fixed Income Portfolio Risk Attribution", layout="wide")
+    st.title('Fixed Income Portfolio Risk Attribution')
 
     # Step 1: Define the instruments and their portfolios
 
@@ -294,37 +292,16 @@ def main():
         st.write('Calculating risk attribution...')
         st.write('This may take a few moments.')
 
-        # Step 4: Fetch Historical Data
+        # Step 4: Load Historical Data from the Excel File
 
-        # Set start and end dates
-        end_date = datetime.today()
-        start_date = end_date - timedelta(days=max(volatility_lookback_days, var_lookback_days) + 252)  # Fetch extra data for calculations
+        # Ensure the Excel file exists
+        excel_file = 'historical_data.xlsx'
+        if not os.path.exists(excel_file):
+            st.error(f"Excel file '{excel_file}' not found. Please ensure it is in the app directory.")
+            return
 
-        # Define tickers and their names
-        tickers = list(tickers_data.keys())
-
-        # Initialize Bloomberg API
-        api = API(debug=False, port=8194, timeout=10000)
-
-        # Fetch historical prices
-        prices = api.bdh(
-            tickers=tickers,
-            fields=['px_last'],
-            elements=[
-                ("periodicityAdjustment", "CALENDAR"),
-                ("periodicitySelection", "DAILY"),
-                ("nonTradingDayFillMethod", "PREVIOUS_VALUE"),
-                ("nonTradingDayFillOption", "ALL_CALENDAR_DAYS")
-            ],
-            sdate=start_date,
-            edate=end_date
-        )
-
-        # Format the DataFrame
-        df = pd.pivot_table(prices, index='date', values='px_last', columns='ticker')
-
-        # Rename columns for clarity
-        df.rename(columns=tickers_data, inplace=True)
+        # Read the data from 'historical_data.xlsx'
+        df = pd.read_excel(excel_file, index_col='date', parse_dates=True)
 
         # Adjust yields for AU 3Y and 10Y futures
         if 'AU 3Y Future' in df.columns:
@@ -340,8 +317,6 @@ def main():
         price_returns = returns * -1
 
         # Adjust returns for time zone differences
-        # Instruments from 'JP', 'AU', 'SK', 'CH' remain as is
-        # Instruments not in these countries are lagged by one day (shifted forward by one day)
         non_lag_countries = ['JP', 'AU', 'SK', 'CH']
         instrument_countries = pd.Series([instrument_country.get(instr, 'Other') for instr in price_returns.columns], index=price_returns.columns)
 
@@ -409,7 +384,10 @@ def main():
             for j in expanded_index:
                 instr_i = i[0]
                 instr_j = j[0]
-                var_i_j = covariance_matrix.loc[instr_i, instr_j]
+                try:
+                    var_i_j = covariance_matrix.loc[instr_i, instr_j]
+                except KeyError:
+                    var_i_j = 0  # If instrument not found in covariance_matrix
                 expanded_cov_matrix.loc[i, j] = var_i_j
 
         expanded_cov_matrix = expanded_cov_matrix.astype(float)
@@ -519,8 +497,13 @@ def main():
         # Aggregate positions per instrument
         positions_per_instrument = expanded_positions_vector.groupby('Instrument').sum()
 
+        # Ensure all instruments in positions_per_instrument are present in price_returns_var
+        available_instruments = positions_per_instrument.index.intersection(price_returns_var.columns)
+        positions_per_instrument = positions_per_instrument.loc[available_instruments]
+        price_returns_var = price_returns_var[available_instruments]
+
         # Compute portfolio returns
-        portfolio_returns = price_returns_var[positions_per_instrument.index].dot(positions_per_instrument) * 100  # Convert returns to bps
+        portfolio_returns = price_returns_var.dot(positions_per_instrument) * 100  # Convert returns to bps
 
         # Daily VaR
         VaR_95_daily = -np.percentile(portfolio_returns, 5)
@@ -540,49 +523,52 @@ def main():
         # Compute Portfolio Sensitivity to US 10Y Rates
 
         # Use returns of US 10Y Future as independent variable
-        us_10y_returns = price_returns_var['US 10Y Future'] * 100  # Convert to bps
+        if 'US 10Y Future' in price_returns_var.columns:
+            us_10y_returns = price_returns_var['US 10Y Future'] * 100  # Convert to bps
 
-        # Align the portfolio returns and US 10Y returns
-        common_dates = portfolio_returns.index.intersection(us_10y_returns.index)
-        portfolio_returns_aligned = portfolio_returns.loc[common_dates]
-        us_10y_returns_aligned = us_10y_returns.loc[common_dates]
+            # Align the portfolio returns and US 10Y returns
+            common_dates = portfolio_returns.index.intersection(us_10y_returns.index)
+            portfolio_returns_aligned = portfolio_returns.loc[common_dates]
+            us_10y_returns_aligned = us_10y_returns.loc[common_dates]
 
-        # Perform regression to find beta
-        covariance = np.cov(portfolio_returns_aligned, us_10y_returns_aligned)[0, 1]
-        variance = np.var(us_10y_returns_aligned)
-        beta = covariance / variance
+            # Perform regression to find beta
+            covariance = np.cov(portfolio_returns_aligned, us_10y_returns_aligned)[0, 1]
+            variance = np.var(us_10y_returns_aligned)
+            beta = covariance / variance if variance != 0 else 0
 
-        # Determine sensitivity direction
-        if beta > 0:
-            beta_direction = 'positive'
-            yield_movement = 'falling'
-            pl_direction = 'gain'
-        elif beta < 0:
-            beta_direction = 'negative'
-            yield_movement = 'rising'
-            pl_direction = 'gain'
-            beta = -beta  # Take absolute value for clarity
+            # Determine sensitivity direction
+            if beta > 0:
+                beta_direction = 'positive'
+                yield_movement = 'falling'
+                pl_direction = 'gain'
+            elif beta < 0:
+                beta_direction = 'negative'
+                yield_movement = 'rising'
+                pl_direction = 'gain'
+                beta = -beta  # Take absolute value for clarity
+            else:
+                beta_direction = 'zero'
+                yield_movement = 'no change'
+                pl_direction = 'no change'
+
+            # Sensitivity to a 1 bps move in US 10Y yields
+            sensitivity = beta * 1  # Sensitivity per 1 bps move
+
+            st.subheader('Portfolio Sensitivity to US 10Y Yields')
+            st.write(f"**Portfolio Beta to US 10Y Yields:** {beta:.4f} ({beta_direction} beta)")
+            st.write(f"The portfolio is expected to {pl_direction} when US 10Y yields are {yield_movement}.")
+
+            # Expected P&L for a 1 bps move in US 10Y yields
+            if beta_direction == 'positive':
+                expected_pl = sensitivity
+                st.write(f"**Expected P&L for a 1 bps fall in US 10Y yields:** Gain of {expected_pl:.4f} bps")
+            elif beta_direction == 'negative':
+                expected_pl = sensitivity
+                st.write(f"**Expected P&L for a 1 bps rise in US 10Y yields:** Gain of {expected_pl:.4f} bps")
+            else:
+                st.write("**Expected P&L for a 1 bps move in US 10Y yields:** No expected change")
         else:
-            beta_direction = 'zero'
-            yield_movement = 'no change'
-            pl_direction = 'no change'
-
-        # Sensitivity to a 1 bps move in US 10Y yields
-        sensitivity = beta * 1  # Sensitivity per 1 bps move
-
-        st.subheader('Portfolio Sensitivity to US 10Y Yields')
-        st.write(f"**Portfolio Beta to US 10Y Yields:** {beta:.4f} ({beta_direction} beta)")
-        st.write(f"The portfolio is expected to {pl_direction} when US 10Y yields are {yield_movement}.")
-
-        # Expected P&L for a 1 bps move in US 10Y yields
-        if beta_direction == 'positive':
-            expected_pl = sensitivity
-            st.write(f"**Expected P&L for a 1 bps fall in US 10Y yields:** Gain of {expected_pl:.4f} bps")
-        elif beta_direction == 'negative':
-            expected_pl = sensitivity
-            st.write(f"**Expected P&L for a 1 bps rise in US 10Y yields:** Gain of {expected_pl:.4f} bps")
-        else:
-            st.write("**Expected P&L for a 1 bps move in US 10Y yields:** No expected change")
+            st.warning("US 10Y Future data not available for sensitivity analysis.")
 
         # Display Portfolio Volatility
         st.subheader('Total Portfolio Volatility')
