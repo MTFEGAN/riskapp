@@ -303,10 +303,6 @@ def main():
         # Read the data from 'historical_data.xlsx'
         df = pd.read_excel(excel_file, index_col='date', parse_dates=True)
 
-        # Diagnostic: Display available columns after reading
-        st.subheader('Diagnostic: Available Columns After Reading Excel File')
-        st.write(df.columns.tolist())
-
         # Adjust yields for AU 3Y and 10Y futures
         if 'AU 3Y Future' in df.columns:
             df['AU 3Y Future'] = 100 - df['AU 3Y Future']
@@ -334,10 +330,6 @@ def main():
 
         # Drop rows with NaN values resulting from the shift
         adjusted_price_returns = adjusted_price_returns.dropna()
-
-        # Diagnostic: Display available columns after processing
-        st.subheader('Diagnostic: Available Columns After Processing Returns')
-        st.write(adjusted_price_returns.columns.tolist())
 
         # Use the selected lookback period for volatility calculations
         price_returns_vol = adjusted_price_returns.tail(volatility_lookback_days)
@@ -510,10 +502,6 @@ def main():
         positions_per_instrument = positions_per_instrument.loc[available_instruments]
         price_returns_var = price_returns_var[available_instruments]
 
-        # Diagnostic: Display available columns for VaR calculation
-        st.subheader('Diagnostic: Available Columns for VaR Calculation')
-        st.write(price_returns_var.columns.tolist())
-
         # Compute portfolio returns
         portfolio_returns = price_returns_var.dot(positions_per_instrument) * 100  # Convert returns to bps
 
@@ -542,13 +530,6 @@ def main():
             common_dates = portfolio_returns.index.intersection(us_10y_returns.index)
             portfolio_returns_aligned = portfolio_returns.loc[common_dates]
             us_10y_returns_aligned = us_10y_returns.loc[common_dates]
-
-            # Diagnostic: Display aligned data sample
-            st.subheader('Diagnostic: Sample Aligned Data for Sensitivity Analysis')
-            st.write("**Portfolio Returns Aligned:**")
-            st.write(portfolio_returns_aligned.head())
-            st.write("**US 10Y Future Returns Aligned:**")
-            st.write(us_10y_returns_aligned.head())
 
             # Perform regression to find beta
             covariance = np.cov(portfolio_returns_aligned, us_10y_returns_aligned)[0, 1]
@@ -588,8 +569,6 @@ def main():
                 st.write("**Expected P&L for a 1 bps move in US 10Y yields:** No expected change")
         else:
             st.warning("US 10Y Future data not available for sensitivity analysis.")
-            st.write("**Available Columns:**")
-            st.write(price_returns_var.columns.tolist())
 
         # Display Portfolio Volatility
         st.subheader('Total Portfolio Volatility')
