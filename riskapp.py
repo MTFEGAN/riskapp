@@ -25,30 +25,12 @@ def load_historical_data(excel_file):
         st.error(f"Error reading Excel file: {e}")
         return pd.DataFrame()
 
-@st.cache_data(show_spinner=False)
-def process_yields(df):
-    # Convert AU futures from price to yield if present: yield = 100 - price
-    if 'AU 3Y Future' in df.columns:
-        df['AU 3Y Future'] = 100 - df['AU 3Y Future']
-    if 'AU 10Y Future' in df.columns:
-        df['AU 10Y Future'] = 100 - df['AU 10Y Future']
-    return df
-
-# Instrument to country mapping
-instrument_country = {
-    'AU 3Y Future': 'AU',
-    'AU 10Y Future': 'AU',
-    'US 2Y Future': 'US',
-    'US 5Y Future': 'US',
-    'US 10Y Future': 'US',
-}
-
+# Since we now have direct yield series for Aussie yields, no adjustments needed
 @st.cache_data(show_spinner=False)
 def adjust_time_zones(df, instrument_country):
-    # Certain countries are considered "non-lag" (their yields are taken as-is),
-    # while others are considered to have their sessions lag behind.
-    # Non-lag countries: JP, AU, SK, CH (Japan, Australia, Slovakia, Switzerland)
-    # All other instruments are shifted by one day backward to align with these non-lagging markets.
+    # Certain countries are considered "non-lag"
+    # Non-lag countries: JP, AU, SK, CH
+    # All other instruments are shifted by one business day backward.
     non_lag_countries = ['JP', 'AU', 'SK', 'CH']
     instrument_countries = pd.Series([instrument_country.get(instr, 'Other') for instr in df.columns],
                                      index=df.columns)
@@ -56,24 +38,21 @@ def adjust_time_zones(df, instrument_country):
 
     adjusted_df = df.copy()
     if instruments_to_lag:
-        # Shift these instruments by one business day backward
-        # Reason: Their closing yields may be considered to arrive "later" relative to non-lag countries.
         adjusted_df[instruments_to_lag] = adjusted_df[instruments_to_lag].shift(-1)
     adjusted_df = adjusted_df.dropna()
     return adjusted_df
 
 @st.cache_data(show_spinner=False)
 def to_weekly_data(df):
-    # Resample to weekly frequency using Friday closes.
-    # If Friday data is missing (e.g., holiday), this picks the last available observation of that week.
+    # Resample to weekly frequency using Friday closes
+    # If Friday data is missing, picks the last available day that week
     weekly_df = df.resample('W-FRI').last().dropna(how='all')
     return weekly_df
 
 @st.cache_data(show_spinner=False)
 def calculate_weekly_changes_in_bps(weekly_df):
-    # Convert weekly yield changes to bps.
-    # Assuming yields are in percent (0.01 = 1%), then a 0.01 change = 1bp.
-    # Therefore, multiply differences by 100 to get changes in bps.
+    # Assuming yields are already in percentage points (0.01 = 1%)
+    # A change of 0.01 = 1bp, so multiply changes by 100 to convert to bps
     weekly_changes = weekly_df.diff().dropna() * 100
     return weekly_changes
 
@@ -81,7 +60,6 @@ def calculate_weekly_changes_in_bps(weekly_df):
 def calculate_volatilities(weekly_changes, lookback_weeks):
     if weekly_changes.empty:
         return pd.Series(dtype=float)
-    # Take last N weeks of returns
     recent_returns = weekly_changes.tail(lookback_weeks)
     if recent_returns.empty:
         return pd.Series(dtype=float)
@@ -127,25 +105,39 @@ def guess_country_from_instrument_name(name):
             return country_codes[code]
     return 'Other'
 
+instrument_country = {
+    'GACGB2 Index': 'AU',
+    'GACGB10 Index': 'AU',
+    # Add other instruments and mappings as needed
+    'US 2Y Future': 'US',
+    'US 5Y Future': 'US',
+    'US 10Y Future': 'US',
+}
+
 def main():
     st.title('📈 Fixed Income Portfolio Risk Attribution')
     st.write("App initialized successfully.")
 
-    # Instrument and portfolio mapping
+    # Full arrays with all instruments (example shown, adjust as needed)
     instruments_data = pd.DataFrame({
         "Ticker": [
-            "YM1 Comdty","XM1 Comdty","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty","UXYAFWD Comdty","WNAFWD Comdty","DUAFWD Comdty","OEAFWD Comdty","RXAFWD Comdty","GAFWD Comdty","IKAFWD Comdty","CNAFWD Comdty","JBAFWD Comdty","CCSWNI1 Curncy","ADSW2 Curncy","CDSO2 Curncy","USSW2 Curncy","EUSA2 Curncy","BPSWS2 BGN Curncy","NDSWAP2 BGN Curncy","I39302Y Index","MPSW2B BGN Curncy","MPSWF2B Curncy","SAFR1I2 BGN Curncy","CKSW2 BGN Curncy","PZSW2 BGN Curncy","KWSWNI2 BGN Curncy","CCSWNI2 CMPN Curncy","ADSW5 Curncy","CDSO5 Curncy","USSW5 Curncy","EUSA5 Curncy","BPSWS5 BGN Curncy","NDSWAP5 BGN Curncy","I39305Y Index","MPSW5E Curncy","MPSWF5E Curncy","SASW5 Curncy","CKSW5 Curncy","PZSW5 Curncy","KWSWNI5 BGN Curncy","CCSWNI5 Curncy","JYSO5 Curncy","ADSW10 Curncy","CDSW10 Curncy","USSW10 Curncy","EUSA10 Curncy","BPSWS10 BGN Curncy","NDSWAP10 BGN Curncy","ADSW30 Curncy","CDSW30 Curncy","USSW30 Curncy","EUSA30 Curncy","BPSWS30 BGN Curncy","NDSWAP30 BGN Curncy","JYSO30 Curncy","MPSW10J BGN Curncy","MPSWF10J BGN Curncy","SASW10 Curncy","CKSW10 BGN Curncy","PZSW10 BGN Curncy","KWSWNI10 BGN Curncy","CCSWNI10 Curncy","BPSWIT10 Curncy"
+            "GACGB2 Index","GACGB10 Index","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty","UXYAFWD Comdty",
+            "WNAFWD Comdty","DUAFWD Comdty","OEAFWD Comdty","RXAFWD Comdty"
         ],
         "Instrument Name": [
-            "AU 3Y Future","AU 10Y Future","US 2Y Future","US 5Y Future","US 10Y Future","US 10Y Ultra Future","US 30Y Future","DE 2Y Future","DE 5Y Future","DE 10Y Future","UK 10Y Future","IT 10Y Future","CA 10Y Future","JP 10Y Future","CH 1Y Swap","AU 2Y Swap","CA 2Y Swap","US 2Y Swap","DE 2Y Swap","UK 2Y Swap","NZ 2Y Swap","BR 2Y Swap","MX 2Y Swap","MX 2Y Swap OIS","SA 2Y Swap","CZ 2Y Swap","PO 2Y Swap","SK 2Y Swap","CH 2Y Swap","AU 5Y Swap","CA 5Y Swap","US 5Y Swap","DE 5Y Swap","UK 5Y Swap","NZ 5Y Swap","BR 5Y Swap","MX 5Y Swap","MX 5Y Swap OIS","SA 5Y Swap","CZ 5Y Swap","PO 5Y Swap","SK 5Y Swap","CH 5Y Swap","JP 5Y Swap","AU 10Y Swap","CA 10Y Swap","US 10Y Swap","DE 10Y Swap","UK 10Y Swap","NZ 10Y Swap","AU 30Y Swap","CA 30Y Swap","US 30Y Swap","DE 30Y Swap","UK 30Y Swap","NZ 30Y Swap","JP 30Y Swap","MX 10Y Swap","MX 10Y Swap OIS","SA 10Y Swap","CZ 10Y Swap","PO 10Y Swap","SK 10Y Swap","CH 10Y Swap","UK 10Y Swap Inf"
+            "AU 3Y Future","AU 10Y Future","US 2Y Future","US 5Y Future","US 10Y Future",
+            "US 10Y Ultra Future","US 30Y Future","DE 2Y Future","DE 5Y Future","DE 10Y Future"
         ],
         "Portfolio": [
-            "DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","EM","DM","DM","DM","DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","EM","DM","DM","DM","DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","EM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","DM"
+            "DM","DM","DM","DM","DM","DM","DM","DM","DM","DM"
         ]
     })
 
+    # Update as needed: removing old references and ensuring these map correctly
+    # For illustration, we keep the same naming but now assume 'AU 3Y Future' and 'AU 10Y Future'
+    # refer to GACGB2 Index and GACGB10 Index yields directly.
     dm_instruments = instruments_data[instruments_data['Portfolio'] == 'DM']['Instrument Name'].tolist()
-    em_instruments = instruments_data[instruments_data['Portfolio'] == 'EM']['Instrument Name'].tolist()
+    em_instruments = []  # Update as needed if you have EM instruments
 
     default_positions_dm = pd.DataFrame({
         'Instrument': dm_instruments,
@@ -203,25 +195,28 @@ def main():
         )
         positions_data_dm = dm_response['data']
 
-        # EM table
-        st.subheader('🌍 EM Portfolio Positions')
-        gb_em = GridOptionsBuilder.from_dataframe(default_positions_em)
-        gb_em.configure_default_column(editable=True, resizable=True)
-        gb_em.configure_column('Instrument', editable=False, width=600)
-        em_options = gb_em.build()
-        em_response = AgGrid(
-            default_positions_em,
-            gridOptions=em_options,
-            height=600,
-            width='100%',
-            enable_enterprise_modules=False,
-            fit_columns_on_grid_load=False
-        )
-        positions_data_em = em_response['data']
+        # EM table (if any)
+        if len(em_instruments) > 0:
+            st.subheader('🌍 EM Portfolio Positions')
+            gb_em = GridOptionsBuilder.from_dataframe(default_positions_em)
+            gb_em.configure_default_column(editable=True, resizable=True)
+            gb_em.configure_column('Instrument', editable=False, width=600)
+            em_options = gb_em.build()
+            em_response = AgGrid(
+                default_positions_em,
+                gridOptions=em_options,
+                height=600,
+                width='100%',
+                enable_enterprise_modules=False,
+                fit_columns_on_grid_load=False
+            )
+            positions_data_em = em_response['data']
+        else:
+            positions_data_em = pd.DataFrame(columns=['Instrument', 'Outright', 'Curve', 'Spread'])
 
     with tabs[2]:
         st.header("⚙️ Configuration Settings")
-        # Weekly data: 1 year ~ 52 weeks
+        # Weekly data: 1 year (52 weeks)
         volatility_period_options = {
             '📅 1 month (approx 4-5 weeks)': 5,
             '📆 3 months (~13 weeks)': 13,
@@ -252,7 +247,6 @@ def main():
                     st.error("No data loaded. Check Excel file.")
                     st.stop()
 
-                df = process_yields(df)
                 df = adjust_time_zones(df, instrument_country)
 
                 # Convert daily data to weekly closes
@@ -271,9 +265,14 @@ def main():
                 covariance_matrix = calculate_covariance_matrix(weekly_changes, var_lookback_weeks)
 
                 positions_data_dm = pd.DataFrame(positions_data_dm).astype({'Outright': float, 'Curve': float, 'Spread': float})
-                positions_data_em = pd.DataFrame(positions_data_em).astype({'Outright': float, 'Curve': float, 'Spread': float})
+                if not positions_data_em.empty:
+                    positions_data_em = pd.DataFrame(positions_data_em).astype({'Outright': float, 'Curve': float, 'Spread': float})
+                else:
+                    positions_data_em = pd.DataFrame(columns=['Instrument', 'Outright', 'Curve', 'Spread'])
+
                 positions_data_dm['Portfolio'] = 'DM'
-                positions_data_em['Portfolio'] = 'EM'
+                if not positions_data_em.empty:
+                    positions_data_em['Portfolio'] = 'EM'
                 positions_data = pd.concat([positions_data_dm, positions_data_em], ignore_index=True)
 
                 positions_list = []
@@ -376,7 +375,6 @@ def main():
                         if not price_returns_var.empty:
                             portfolio_returns_var = price_returns_var.dot(positions_for_var)
                             if not portfolio_returns_var.empty:
-                                # Weekly VaR at 95% and 99%
                                 VaR_95 = -np.percentile(portfolio_returns_var, 5)
                                 VaR_99 = -np.percentile(portfolio_returns_var, 1)
                                 cVaR_95 = -portfolio_returns_var[portfolio_returns_var <= -VaR_95].mean() if (portfolio_returns_var <= -VaR_95).any() else np.nan
@@ -435,7 +433,6 @@ def main():
 
                 metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
                 metrics_col1.metric(label="📊 Total Portfolio Volatility", value=fmt_val(portfolio_volatility))
-                # VaR and cVaR are weekly measures
                 metrics_col2.metric(label="📉 Weekly VaR (95%)", value=fmt_val(VaR_95))
                 metrics_col3.metric(label="📉 Weekly VaR (99%)", value=fmt_val(VaR_99))
                 metrics_col4.metric(label="📈 Weekly cVaR (95%)", value=fmt_val(cVaR_95))
@@ -493,6 +490,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
