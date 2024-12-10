@@ -41,7 +41,6 @@ def calculate_returns(df):
     price_returns = returns * -1
     return price_returns
 
-# Mapping for time zone adjustment
 instrument_country = {
     'AU 3Y Future': 'AU',
     'AU 10Y Future': 'AU',
@@ -113,7 +112,6 @@ def main():
     st.title('📈 Fixed Income Portfolio Risk Attribution')
     st.write("App initialized successfully.")
 
-    # instruments_data and classification remain the same
     instruments_data = pd.DataFrame({
         "Ticker": [
             "YM1 Comdty","XM1 Comdty","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty","UXYAFWD Comdty","WNAFWD Comdty","DUAFWD Comdty","OEAFWD Comdty","RXAFWD Comdty","GAFWD Comdty","IKAFWD Comdty","CNAFWD Comdty","JBAFWD Comdty","CCSWNI1 Curncy","ADSW2 Curncy","CDSO2 Curncy","USSW2 Curncy","EUSA2 Curncy","BPSWS2 BGN Curncy","NDSWAP2 BGN Curncy","I39302Y Index","MPSW2B BGN Curncy","MPSWF2B Curncy","SAFR1I2 BGN Curncy","CKSW2 BGN Curncy","PZSW2 BGN Curncy","KWSWNI2 BGN Curncy","CCSWNI2 CMPN Curncy","ADSW5 Curncy","CDSO5 Curncy","USSW5 Curncy","EUSA5 Curncy","BPSWS5 BGN Curncy","NDSWAP5 BGN Curncy","I39305Y Index","MPSW5E Curncy","MPSWF5E Curncy","SASW5 Curncy","CKSW5 Curncy","PZSW5 Curncy","KWSWNI5 Curncy","CCSWNI5 Curncy","JYSO5 Curncy","ADSW10 Curncy","CDSW10 Curncy","USSW10 Curncy","EUSA10 Curncy","BPSWS10 BGN Curncy","NDSWAP10 BGN Curncy","ADSW30 Curncy","CDSW30 Curncy","USSW30 Curncy","EUSA30 Curncy","BPSWS30 BGN Curncy","NDSWAP30 BGN Curncy","JYSO30 Curncy","MPSW10J BGN Curncy","MPSWF10J BGN Curncy","SASW10 Curncy","CKSW10 Curncy","PZSW10 Curncy","KWSWNI10 Curncy","CCSWNI10 Curncy","BPSWIT10 Curncy"
@@ -151,7 +149,7 @@ def main():
 
     raw_df = load_historical_data(excel_file)
     if raw_df.empty:
-        st.error("No data loaded. Check Excel file.")
+        st.error("No data loaded from Excel.")
         st.stop()
 
     available_columns = raw_df.columns.tolist()
@@ -346,8 +344,9 @@ def main():
                 def fmt_val(x):
                     return f"{x:.2f} bps" if (not np.isnan(x) and not np.isinf(x)) else "N/A"
 
+                VaR_95_daily, VaR_99_daily, cVaR_95_daily, cVaR_99_daily = (np.nan, np.nan, np.nan, np.nan)
+                positions_per_instrument = expanded_positions_vector.groupby('Instrument').sum()
                 if not price_returns_var.empty:
-                    positions_per_instrument = expanded_positions_vector.groupby('Instrument').sum()
                     available_instruments_var = positions_per_instrument.index.intersection(price_returns_var.columns)
                     if not available_instruments_var.empty:
                         positions_per_instrument = positions_per_instrument.loc[available_instruments_var]
@@ -359,30 +358,21 @@ def main():
                                 VaR_99_daily = -np.percentile(portfolio_returns, 1)
                                 cVaR_95_daily = -portfolio_returns[portfolio_returns <= -VaR_95_daily].mean() if (portfolio_returns <= -VaR_95_daily).any() else np.nan
                                 cVaR_99_daily = -portfolio_returns[portfolio_returns <= -VaR_99_daily].mean() if (portfolio_returns <= -VaR_99_daily).any() else np.nan
-                            else:
-                                VaR_95_daily, VaR_99_daily, cVaR_95_daily, cVaR_99_daily = (np.nan, np.nan, np.nan, np.nan)
-                        else:
-                            VaR_95_daily, VaR_99_daily, cVaR_95_daily, cVaR_99_daily = (np.nan, np.nan, np.nan, np.nan)
-                    else:
-                        VaR_95_daily, VaR_99_daily, cVaR_95_daily, cVaR_99_daily = (np.nan, np.nan, np.nan, np.nan)
-                else:
-                    VaR_95_daily, VaR_99_daily, cVaR_95_daily, cVaR_99_daily = (np.nan, np.nan, np.nan, np.nan)
 
                 # Compute Betas
                 portfolio_beta = np.nan
                 instrument_betas = {}
-                if (sensitivity_rate in price_returns_var.columns) and (positions_per_instrument is not None) and (not price_returns_var.empty):
-                    if not positions_per_instrument.empty:
-                        portfolio_returns_for_beta = price_returns_var.dot(positions_per_instrument) * 100
-                        us10yr_returns = price_returns_var[sensitivity_rate] * 100
-                        portfolio_beta = compute_beta(portfolio_returns_for_beta, us10yr_returns)
-                        for instr in positions_per_instrument.index:
-                            pos_val = positions_per_instrument[instr]
-                            if pos_val != 0:
-                                instr_return = price_returns_var[instr]*pos_val*100
-                                instr_beta = compute_beta(instr_return, us10yr_returns)
-                                if not np.isnan(instr_beta):
-                                    instrument_betas[instr] = (pos_val, instr_beta)
+                if (sensitivity_rate in price_returns_var.columns) and (not price_returns_var.empty) and (not positions_per_instrument.empty):
+                    portfolio_returns_for_beta = price_returns_var.dot(positions_per_instrument) * 100
+                    us10yr_returns = price_returns_var[sensitivity_rate] * 100
+                    portfolio_beta = compute_beta(portfolio_returns_for_beta, us10yr_returns)
+                    for instr in positions_per_instrument.index:
+                        pos_val = positions_per_instrument[instr]
+                        if pos_val != 0:
+                            instr_return = price_returns_var[instr]*pos_val*100
+                            instr_beta = compute_beta(instr_return, us10yr_returns)
+                            if not np.isnan(instr_beta):
+                                instrument_betas[instr] = (pos_val, instr_beta)
 
                 risk_contributions_formatted['Country'] = risk_contributions_formatted['Instrument'].apply(guess_country_from_instrument_name)
                 country_bucket = risk_contributions_formatted.groupby(['Country', 'Position Type']).agg({
@@ -431,7 +421,7 @@ def main():
                 st.write(f"**Daily VaR at 99%:** {fmt_val(VaR_99_daily)}")
                 st.write(f"**Daily cVaR at 99%:** {fmt_val(cVaR_99_daily)}")
 
-                # Always show the Beta section header
+                # US Beta Section
                 st.subheader("📉 Beta to US 10yr Rates")
                 if not np.isnan(portfolio_beta):
                     st.write(f"**Portfolio Beta to {sensitivity_rate}:** {portfolio_beta:.4f}")
@@ -480,6 +470,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
