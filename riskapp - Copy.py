@@ -1,9 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
-from collections import OrderedDict
 import os
+from collections import OrderedDict  # Ensure OrderedDict is imported
 
 # Import AgGrid for advanced data grid features
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
@@ -301,7 +300,37 @@ def main():
             return
 
         # Read the data from 'historical_data.xlsx'
-        df = pd.read_excel(excel_file, index_col='date', parse_dates=True)
+        try:
+            # Load Excel file
+            excel = pd.ExcelFile(excel_file)
+            # Find the sheet that contains 'US 10Y Future'
+            sheet_with_us_10y = None
+            for sheet in excel.sheet_names:
+                df_sheet = excel.parse(sheet_name=sheet)
+                # Clean column names by stripping spaces and making lowercase for matching
+                df_sheet.columns = df_sheet.columns.str.strip().str.lower()
+                if 'us 10y future' in df_sheet.columns:
+                    sheet_with_us_10y = sheet
+                    # Rename columns back to original for consistency
+                    df_sheet.columns = excel.parse(sheet_name=sheet).columns
+                    break
+            if sheet_with_us_10y is None:
+                st.warning("US 10Y Future data not available for sensitivity analysis.")
+                st.write("**Available Sheets:**")
+                st.write(excel.sheet_names)
+                return
+            # Read the sheet with 'US 10Y Future'
+            df = pd.read_excel(excel_file, sheet_name=sheet_with_us_10y, index_col='date', parse_dates=True)
+        except Exception as e:
+            st.error(f"Error reading Excel file: {e}")
+            return
+
+        # Check if 'US 10Y Future' exists (case-sensitive)
+        if 'US 10Y Future' not in df.columns:
+            st.warning("US 10Y Future data not available for sensitivity analysis.")
+            st.write("**Available Columns:**")
+            st.write(df.columns.tolist())
+            return
 
         # Adjust yields for AU 3Y and 10Y futures
         if 'AU 3Y Future' in df.columns:
@@ -531,44 +560,50 @@ def main():
             portfolio_returns_aligned = portfolio_returns.loc[common_dates]
             us_10y_returns_aligned = us_10y_returns.loc[common_dates]
 
-            # Perform regression to find beta
-            covariance = np.cov(portfolio_returns_aligned, us_10y_returns_aligned)[0, 1]
-            variance = np.var(us_10y_returns_aligned)
-            beta = covariance / variance if variance != 0 else 0
-
-            # Determine sensitivity direction
-            if beta > 0:
-                beta_direction = 'positive'
-                yield_movement = 'falling'
-                pl_direction = 'gain'
-            elif beta < 0:
-                beta_direction = 'negative'
-                yield_movement = 'rising'
-                pl_direction = 'gain'
-                beta = -beta  # Take absolute value for clarity
+            # Check if there are overlapping dates
+            if portfolio_returns_aligned.empty or us_10y_returns_aligned.empty:
+                st.warning("Insufficient overlapping data between portfolio returns and US 10Y Future returns for sensitivity analysis.")
             else:
-                beta_direction = 'zero'
-                yield_movement = 'no change'
-                pl_direction = 'no change'
+                # Perform regression to find beta
+                covariance = np.cov(portfolio_returns_aligned, us_10y_returns_aligned)[0, 1]
+                variance = np.var(us_10y_returns_aligned)
+                beta = covariance / variance if variance != 0 else 0
 
-            # Sensitivity to a 1 bps move in US 10Y yields
-            sensitivity = beta * 1  # Sensitivity per 1 bps move
+                # Determine sensitivity direction
+                if beta > 0:
+                    beta_direction = 'positive'
+                    yield_movement = 'falling'
+                    pl_direction = 'gain'
+                elif beta < 0:
+                    beta_direction = 'negative'
+                    yield_movement = 'rising'
+                    pl_direction = 'gain'
+                    beta = -beta  # Take absolute value for clarity
+                else:
+                    beta_direction = 'zero'
+                    yield_movement = 'no change'
+                    pl_direction = 'no change'
 
-            st.subheader('Portfolio Sensitivity to US 10Y Yields')
-            st.write(f"**Portfolio Beta to US 10Y Yields:** {beta:.4f} ({beta_direction} beta)")
-            st.write(f"The portfolio is expected to {pl_direction} when US 10Y yields are {yield_movement}.")
+                # Sensitivity to a 1 bps move in US 10Y yields
+                sensitivity = beta * 1  # Sensitivity per 1 bps move
 
-            # Expected P&L for a 1 bps move in US 10Y yields
-            if beta_direction == 'positive':
-                expected_pl = sensitivity
-                st.write(f"**Expected P&L for a 1 bps fall in US 10Y yields:** Gain of {expected_pl:.4f} bps")
-            elif beta_direction == 'negative':
-                expected_pl = sensitivity
-                st.write(f"**Expected P&L for a 1 bps rise in US 10Y yields:** Gain of {expected_pl:.4f} bps")
-            else:
-                st.write("**Expected P&L for a 1 bps move in US 10Y yields:** No expected change")
+                st.subheader('Portfolio Sensitivity to US 10Y Yields')
+                st.write(f"**Portfolio Beta to US 10Y Yields:** {beta:.4f} ({beta_direction} beta)")
+                st.write(f"The portfolio is expected to {pl_direction} when US 10Y yields are {yield_movement}.")
+
+                # Expected P&L for a 1 bps move in US 10Y yields
+                if beta_direction == 'positive':
+                    expected_pl = sensitivity
+                    st.write(f"**Expected P&L for a 1 bps fall in US 10Y yields:** Gain of {expected_pl:.4f} bps")
+                elif beta_direction == 'negative':
+                    expected_pl = sensitivity
+                    st.write(f"**Expected P&L for a 1 bps rise in US 10Y yields:** Gain of {expected_pl:.4f} bps")
+                else:
+                    st.write("**Expected P&L for a 1 bps move in US 10Y yields:** No expected change")
         else:
             st.warning("US 10Y Future data not available for sensitivity analysis.")
+            st.write("**Available Columns:**")
+            st.write(price_returns_var.columns.tolist())
 
         # Display Portfolio Volatility
         st.subheader('Total Portfolio Volatility')

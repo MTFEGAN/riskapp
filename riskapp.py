@@ -3,9 +3,87 @@ import pandas as pd
 import numpy as np
 import os
 from collections import OrderedDict  # Ensure OrderedDict is imported
-
-# Import AgGrid for advanced data grid features
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
+
+@st.cache_data
+def load_historical_data(excel_file):
+    try:
+        # Load Excel file
+        excel = pd.ExcelFile(excel_file)
+        # Find the sheet that contains 'US 10Y Future'
+        sheet_with_us_10y = None
+        for sheet in excel.sheet_names:
+            df_sheet = excel.parse(sheet_name=sheet)
+            # Clean column names by stripping spaces and making lowercase for matching
+            df_sheet.columns = df_sheet.columns.str.strip().str.lower()
+            if 'us 10y future' in df_sheet.columns:
+                sheet_with_us_10y = sheet
+                # Rename columns back to original for consistency
+                df_sheet.columns = excel.parse(sheet_name=sheet).columns
+                break
+        if sheet_with_us_10y is None:
+            st.warning("US 10Y Future data not available for sensitivity analysis.")
+            st.write("**Available Sheets:**")
+            st.write(excel.sheet_names)
+            return None
+        # Read the sheet with 'US 10Y Future'
+        df = pd.read_excel(excel_file, sheet_name=sheet_with_us_10y, index_col='date', parse_dates=True)
+        return df
+    except Exception as e:
+        st.error(f"Error reading Excel file: {e}")
+        return None
+
+@st.cache_data
+def process_yields(df):
+    # Adjust yields for AU 3Y and 10Y futures
+    if 'AU 3Y Future' in df.columns:
+        df['AU 3Y Future'] = 100 - df['AU 3Y Future']
+    if 'AU 10Y Future' in df.columns:
+        df['AU 10Y Future'] = 100 - df['AU 10Y Future']
+    return df
+
+@st.cache_data
+def calculate_returns(df):
+    # Calculate daily yield changes (returns)
+    returns = df.diff().dropna()
+    # Correct the sign of returns to reflect price changes
+    # Since bond prices move inversely to yields, we multiply by -1
+    price_returns = returns * -1
+    return price_returns
+
+@st.cache_data
+def adjust_time_zones(price_returns, instrument_country):
+    # Adjust returns for time zone differences
+    non_lag_countries = ['JP', 'AU', 'SK', 'CH']
+    instrument_countries = pd.Series([instrument_country.get(instr, 'Other') for instr in price_returns.columns], index=price_returns.columns)
+
+    instruments_to_lag = instrument_countries[~instrument_countries.isin(non_lag_countries)].index.tolist()
+    instruments_not_to_lag = instrument_countries[instrument_countries.isin(non_lag_countries)].index.tolist()
+
+    adjusted_price_returns = price_returns.copy()
+
+    if instruments_to_lag:
+        adjusted_price_returns[instruments_to_lag] = adjusted_price_returns[instruments_to_lag].shift(-1)
+
+    # Drop rows with NaN values resulting from the shift
+    adjusted_price_returns = adjusted_price_returns.dropna()
+    return adjusted_price_returns
+
+@st.cache_data
+def calculate_volatilities(adjusted_price_returns, lookback_days):
+    # Use the selected lookback period for volatility calculations
+    price_returns_vol = adjusted_price_returns.tail(lookback_days)
+    # Calculate annualized volatilities in basis points
+    volatilities = price_returns_vol.std() * np.sqrt(252) * 100  # Annualized volatility in bps
+    return volatilities
+
+@st.cache_data
+def calculate_covariance_matrix(adjusted_price_returns, lookback_days):
+    # Use the selected lookback period for covariance calculations
+    price_returns_cov = adjusted_price_returns.tail(lookback_days)
+    # Calculate the covariance matrix (annualized) in bps^2
+    covariance_matrix = price_returns_cov.cov() * 252 * 10000  # Multiply by 100^2 to convert to bps^2
+    return covariance_matrix
 
 def main():
     # Set page configuration to use the full width
@@ -234,6 +312,7 @@ def main():
     gb_dm = GridOptionsBuilder.from_dataframe(default_positions_dm)
     gb_dm.configure_columns(['Outright', 'Curve', 'Spread'], editable=True, cellStyle=cell_style_jscode)
     gb_dm.configure_column('Instrument', editable=False)
+    gb_dm.configure_pagination(enabled=True, paginationPageSize=20)  # Enable pagination
     grid_options_dm = gb_dm.build()
     grid_response_dm = AgGrid(
         default_positions_dm,
@@ -251,6 +330,7 @@ def main():
     gb_em = GridOptionsBuilder.from_dataframe(default_positions_em)
     gb_em.configure_columns(['Outright', 'Curve', 'Spread'], editable=True, cellStyle=cell_style_jscode)
     gb_em.configure_column('Instrument', editable=False)
+    gb_em.configure_pagination(enabled=True, paginationPageSize=20)  # Enable pagination
     grid_options_em = gb_em.build()
     grid_response_em = AgGrid(
         default_positions_em,
@@ -292,82 +372,28 @@ def main():
         st.write('This may take a few moments.')
 
         # Step 4: Load Historical Data from the Excel File
-
-        # Ensure the Excel file exists
         excel_file = 'historical_data.xlsx'
         if not os.path.exists(excel_file):
             st.error(f"Excel file '{excel_file}' not found. Please ensure it is in the app directory.")
             return
 
-        # Read the data from 'historical_data.xlsx'
-        try:
-            # Load Excel file
-            excel = pd.ExcelFile(excel_file)
-            # Find the sheet that contains 'US 10Y Future'
-            sheet_with_us_10y = None
-            for sheet in excel.sheet_names:
-                df_sheet = excel.parse(sheet_name=sheet)
-                # Clean column names by stripping spaces and making lowercase for matching
-                df_sheet.columns = df_sheet.columns.str.strip().str.lower()
-                if 'us 10y future' in df_sheet.columns:
-                    sheet_with_us_10y = sheet
-                    # Rename columns back to original for consistency
-                    df_sheet.columns = excel.parse(sheet_name=sheet).columns
-                    break
-            if sheet_with_us_10y is None:
-                st.warning("US 10Y Future data not available for sensitivity analysis.")
-                st.write("**Available Sheets:**")
-                st.write(excel.sheet_names)
-                return
-            # Read the sheet with 'US 10Y Future'
-            df = pd.read_excel(excel_file, sheet_name=sheet_with_us_10y, index_col='date', parse_dates=True)
-        except Exception as e:
-            st.error(f"Error reading Excel file: {e}")
+        # Load and process historical data
+        df = load_historical_data(excel_file)
+        if df is None:
+            return  # Error message already displayed
+
+        df = process_yields(df)
+        price_returns = calculate_returns(df)
+        adjusted_price_returns = adjust_time_zones(price_returns, instrument_country)
+
+        # Check if adjusted_price_returns is empty
+        if adjusted_price_returns.empty:
+            st.warning("No data available after adjusting for time zones.")
             return
 
-        # Check if 'US 10Y Future' exists (case-sensitive)
-        if 'US 10Y Future' not in df.columns:
-            st.warning("US 10Y Future data not available for sensitivity analysis.")
-            st.write("**Available Columns:**")
-            st.write(df.columns.tolist())
-            return
-
-        # Adjust yields for AU 3Y and 10Y futures
-        if 'AU 3Y Future' in df.columns:
-            df['AU 3Y Future'] = 100 - df['AU 3Y Future']
-        if 'AU 10Y Future' in df.columns:
-            df['AU 10Y Future'] = 100 - df['AU 10Y Future']
-
-        # Calculate daily yield changes (returns)
-        returns = df.diff().dropna()
-
-        # Correct the sign of returns to reflect price changes
-        # Since bond prices move inversely to yields, we multiply by -1
-        price_returns = returns * -1
-
-        # Adjust returns for time zone differences
-        non_lag_countries = ['JP', 'AU', 'SK', 'CH']
-        instrument_countries = pd.Series([instrument_country.get(instr, 'Other') for instr in price_returns.columns], index=price_returns.columns)
-
-        instruments_to_lag = instrument_countries[~instrument_countries.isin(non_lag_countries)].index.tolist()
-        instruments_not_to_lag = instrument_countries[instrument_countries.isin(non_lag_countries)].index.tolist()
-
-        adjusted_price_returns = price_returns.copy()
-
-        for instr in instruments_to_lag:
-            adjusted_price_returns[instr] = adjusted_price_returns[instr].shift(-1)
-
-        # Drop rows with NaN values resulting from the shift
-        adjusted_price_returns = adjusted_price_returns.dropna()
-
-        # Use the selected lookback period for volatility calculations
-        price_returns_vol = adjusted_price_returns.tail(volatility_lookback_days)
-
-        # Calculate annualized volatilities in basis points
-        volatilities = price_returns_vol.std() * np.sqrt(252) * 100  # Annualized volatility in bps
-
-        # Calculate the covariance matrix (annualized) in bps^2
-        covariance_matrix = price_returns_vol.cov() * 252 * 10000  # Multiply by 100^2 to convert to bps^2
+        # Calculate volatilities and covariance matrix
+        volatilities = calculate_volatilities(adjusted_price_returns, volatility_lookback_days)
+        covariance_matrix = calculate_covariance_matrix(adjusted_price_returns, volatility_lookback_days)
 
         # Step 5: Process User Input Positions
 
@@ -408,16 +434,18 @@ def main():
         expanded_index = expanded_positions_vector.index
         expanded_cov_matrix = pd.DataFrame(index=expanded_index, columns=expanded_index)
 
-        # Populate the expanded covariance matrix
-        for i in expanded_index:
-            for j in expanded_index:
-                instr_i = i[0]
-                instr_j = j[0]
-                try:
-                    var_i_j = covariance_matrix.loc[instr_i, instr_j]
-                except KeyError:
-                    var_i_j = 0  # If instrument not found in covariance_matrix
-                expanded_cov_matrix.loc[i, j] = var_i_j
+        # Populate the expanded covariance matrix (vectorized)
+        instruments = expanded_positions_vector.index.get_level_values('Instrument').unique()
+        # Extract relevant covariance submatrix
+        covariance_submatrix = covariance_matrix.loc[instruments, instruments]
+
+        # Assign covariance values to the expanded covariance matrix
+        for pos1 in expanded_index:
+            for pos2 in expanded_index:
+                instr1 = pos1[0]
+                instr2 = pos2[0]
+                var_i_j = covariance_submatrix.loc[instr1, instr2]
+                expanded_cov_matrix.loc[pos1, pos2] = var_i_j
 
         expanded_cov_matrix = expanded_cov_matrix.astype(float)
 
@@ -501,7 +529,9 @@ def main():
         dm_positions_data = expanded_positions_data[expanded_positions_data['Portfolio'] == 'DM']
         if not dm_positions_data.empty:
             dm_positions_vector = dm_positions_data.set_index(['Instrument', 'Position Type'])['Position']
-            dm_variance = np.dot(dm_positions_vector.T, np.dot(expanded_cov_matrix.loc[dm_positions_vector.index, dm_positions_vector.index], dm_positions_vector))
+            # Extract relevant covariance submatrix
+            dm_cov_submatrix = expanded_cov_matrix.loc[dm_positions_vector.index, dm_positions_vector.index]
+            dm_variance = np.dot(dm_positions_vector.T, np.dot(dm_cov_submatrix, dm_positions_vector))
             dm_volatility = np.sqrt(dm_variance)
         else:
             dm_volatility = 0
@@ -510,7 +540,9 @@ def main():
         em_positions_data = expanded_positions_data[expanded_positions_data['Portfolio'] == 'EM']
         if not em_positions_data.empty:
             em_positions_vector = em_positions_data.set_index(['Instrument', 'Position Type'])['Position']
-            em_variance = np.dot(em_positions_vector.T, np.dot(expanded_cov_matrix.loc[em_positions_vector.index, em_positions_vector.index], em_positions_vector))
+            # Extract relevant covariance submatrix
+            em_cov_submatrix = expanded_cov_matrix.loc[em_positions_vector.index, em_positions_vector.index]
+            em_variance = np.dot(em_positions_vector.T, np.dot(em_cov_submatrix, em_positions_vector))
             em_volatility = np.sqrt(em_variance)
         else:
             em_volatility = 0
