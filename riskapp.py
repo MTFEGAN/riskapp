@@ -144,13 +144,17 @@ def main():
         raw_df = load_historical_data(excel_file)
         if raw_df is not None:
             available_columns = raw_df.columns.tolist()
+            if 'US 10Y Future' in available_columns:
+                default_index = available_columns.index('US 10Y Future')
+            else:
+                default_index = 0  # Default to the first column if 'US 10Y Future' is not present
             sensitivity_rate = st.sidebar.selectbox(
                 'Select the rate instrument for sensitivity analysis:',
                 options=available_columns,
-                index=available_columns.index('US 10Y Future') if 'US 10Y Future' in available_columns else 0
+                index=default_index
             )
         else:
-            sensitivity_rate = 'US 10Y Future'  # Default value
+            sensitivity_rate = 'US 10Y Future'  # Default value if data loading failed
     else:
         st.sidebar.error(f"Excel file '{excel_file}' not found. Please ensure it is in the app directory.")
         return
@@ -442,8 +446,11 @@ def main():
 
         # Ensure that the sensitivity rate is included even if the user has no position in it
         if sensitivity_rate not in expanded_positions_vector.index.get_level_values('Instrument'):
-            # Add 'US 10Y Future' with zero position
-            zero_position = pd.Series(0.0, index=pd.MultiIndex.from_tuples([(sensitivity_rate, 'Outright')]))
+            # Add the sensitivity_rate with zero position
+            zero_position = pd.Series(
+                0.0, 
+                index=pd.MultiIndex.from_tuples([(sensitivity_rate, 'Outright')], names=['Instrument', 'Position Type'])
+            )
             expanded_positions_vector = pd.concat([expanded_positions_vector, zero_position])
 
         # Create an empty DataFrame for the expanded covariance matrix
@@ -452,16 +459,19 @@ def main():
 
         # Populate the expanded covariance matrix (vectorized)
         instruments = expanded_positions_vector.index.get_level_values('Instrument').unique()
+        
         # Check if all instruments are present in the covariance matrix
         missing_instruments = [instr for instr in instruments if instr not in covariance_matrix.index]
         if missing_instruments:
             st.warning(f"The following instruments are missing from the covariance matrix and will be excluded from calculations: {missing_instruments}")
             # Remove missing instruments from positions_vector and expanded_cov_matrix
+            # Drop any positions corresponding to missing instruments
             expanded_positions_vector = expanded_positions_vector.drop(labels=[(instr, pos_type) for instr in missing_instruments for pos_type in ['Outright', 'Curve', 'Spread'] if (instr, pos_type) in expanded_positions_vector.index], errors='ignore')
             expanded_index = expanded_positions_vector.index
             expanded_cov_matrix = pd.DataFrame(index=expanded_index, columns=expanded_index)
             instruments = expanded_positions_vector.index.get_level_values('Instrument').unique()
 
+        # Re-extract covariance_submatrix with available instruments
         covariance_submatrix = covariance_matrix.loc[instruments, instruments]
 
         # Assign covariance values to the expanded covariance matrix
@@ -505,8 +515,14 @@ def main():
 
         # Create a DataFrame for reporting
         risk_contributions = expanded_positions_data.copy()
-        # Ensure 'US 10Y Future' is included
-        if (sensitivity_rate, 'Outright') not in risk_contributions.set_index(['Instrument', 'Position Type']).index:
+        
+        # Ensure 'Instrument' and 'Position Type' are set correctly
+        if not {'Instrument', 'Position Type'}.issubset(risk_contributions.columns):
+            st.error("Positions data is missing 'Instrument' or 'Position Type' columns.")
+            return
+
+        # Ensure 'US 10Y Future' is included in risk_contributions
+        if (sensitivity_rate, 'Outright') not in expanded_positions_vector.index:
             risk_contributions = risk_contributions.append({
                 'Instrument': sensitivity_rate,
                 'Position Type': 'Outright',
