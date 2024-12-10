@@ -9,28 +9,16 @@ from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
 # Caching the data loading and processing functions to improve performance
 @st.cache_data
-def load_historical_data(excel_file, sensitivity_rate):
+def load_historical_data(excel_file):
     try:
         # Load Excel file
         excel = pd.ExcelFile(excel_file)
-        # Find the sheet that contains the sensitivity rate column
-        sheet_with_sensitivity = None
+        # Read all sheets and combine them (assuming data is spread across multiple sheets)
+        df_list = []
         for sheet in excel.sheet_names:
-            df_sheet = excel.parse(sheet_name=sheet)
-            # Clean column names by stripping spaces and making lowercase for matching
-            df_sheet.columns = df_sheet.columns.str.strip().str.lower()
-            if sensitivity_rate.lower() in df_sheet.columns:
-                sheet_with_sensitivity = sheet
-                # Rename columns back to original for consistency
-                df_sheet.columns = excel.parse(sheet_name=sheet).columns
-                break
-        if sheet_with_sensitivity is None:
-            st.warning(f"'{sensitivity_rate}' data not available for sensitivity analysis.")
-            st.write("**Available Sheets:**")
-            st.write(excel.sheet_names)
-            return None
-        # Read the sheet with the sensitivity rate
-        df = pd.read_excel(excel_file, sheet_name=sheet_with_sensitivity, index_col='date', parse_dates=True)
+            df_sheet = excel.parse(sheet_name=sheet, index_col='date', parse_dates=True)
+            df_list.append(df_sheet)
+        df = pd.concat(df_list, axis=1)
         return df
     except Exception as e:
         st.error(f"Error reading Excel file: {e}")
@@ -147,8 +135,25 @@ def main():
         ]
     })
 
-    # Define the sensitivity rate column
-    sensitivity_rate = 'US 10Y Future'  # Change this if your column is named differently
+    # Define the sensitivity rate column with user selection
+    st.sidebar.header("Sensitivity Rate Configuration")
+    excel_file = 'historical_data.xlsx'
+
+    # Load historical data to get available columns
+    if os.path.exists(excel_file):
+        raw_df = load_historical_data(excel_file)
+        if raw_df is not None:
+            available_columns = raw_df.columns.tolist()
+            sensitivity_rate = st.sidebar.selectbox(
+                'Select the rate instrument for sensitivity analysis:',
+                options=available_columns,
+                index=available_columns.index('US 10Y Future') if 'US 10Y Future' in available_columns else 0
+            )
+        else:
+            sensitivity_rate = 'US 10Y Future'  # Default value
+    else:
+        st.sidebar.error(f"Excel file '{excel_file}' not found. Please ensure it is in the app directory.")
+        return
 
     # Create tickers_data mapping Ticker to Instrument Name
     tickers_data = OrderedDict(zip(instruments_data['Ticker'], instruments_data['Instrument Name']))
@@ -378,13 +383,12 @@ def main():
         st.write('This may take a few moments.')
 
         # Step 4: Load Historical Data from the Excel File
-        excel_file = 'historical_data.xlsx'
         if not os.path.exists(excel_file):
             st.error(f"Excel file '{excel_file}' not found. Please ensure it is in the app directory.")
             return
 
         # Load and process historical data
-        df = load_historical_data(excel_file, sensitivity_rate)
+        df = load_historical_data(excel_file)
         if df is None:
             return  # Error message already displayed
 
@@ -440,7 +444,7 @@ def main():
         if sensitivity_rate not in expanded_positions_vector.index.get_level_values('Instrument'):
             # Add 'US 10Y Future' with zero position
             zero_position = pd.Series(0.0, index=pd.MultiIndex.from_tuples([(sensitivity_rate, 'Outright')]))
-            expanded_positions_vector = expanded_positions_vector.append(zero_position)
+            expanded_positions_vector = pd.concat([expanded_positions_vector, zero_position])
 
         # Create an empty DataFrame for the expanded covariance matrix
         expanded_index = expanded_positions_vector.index
@@ -448,7 +452,16 @@ def main():
 
         # Populate the expanded covariance matrix (vectorized)
         instruments = expanded_positions_vector.index.get_level_values('Instrument').unique()
-        # Extract relevant covariance submatrix
+        # Check if all instruments are present in the covariance matrix
+        missing_instruments = [instr for instr in instruments if instr not in covariance_matrix.index]
+        if missing_instruments:
+            st.warning(f"The following instruments are missing from the covariance matrix and will be excluded from calculations: {missing_instruments}")
+            # Remove missing instruments from positions_vector and expanded_cov_matrix
+            expanded_positions_vector = expanded_positions_vector.drop(labels=[(instr, pos_type) for instr in missing_instruments for pos_type in ['Outright', 'Curve', 'Spread'] if (instr, pos_type) in expanded_positions_vector.index], errors='ignore')
+            expanded_index = expanded_positions_vector.index
+            expanded_cov_matrix = pd.DataFrame(index=expanded_index, columns=expanded_index)
+            instruments = expanded_positions_vector.index.get_level_values('Instrument').unique()
+
         covariance_submatrix = covariance_matrix.loc[instruments, instruments]
 
         # Assign covariance values to the expanded covariance matrix
@@ -493,12 +506,13 @@ def main():
         # Create a DataFrame for reporting
         risk_contributions = expanded_positions_data.copy()
         # Ensure 'US 10Y Future' is included
-        risk_contributions = risk_contributions.append({
-            'Instrument': sensitivity_rate,
-            'Position Type': 'Outright',
-            'Position': 0.0,
-            'Portfolio': 'DM'  # Assign to DM or another appropriate portfolio if necessary
-        }, ignore_index=True)
+        if (sensitivity_rate, 'Outright') not in risk_contributions.set_index(['Instrument', 'Position Type']).index:
+            risk_contributions = risk_contributions.append({
+                'Instrument': sensitivity_rate,
+                'Position Type': 'Outright',
+                'Position': 0.0,
+                'Portfolio': 'DM'  # Assign to DM or another appropriate portfolio if necessary
+            }, ignore_index=True)
 
         # Merge to align with expanded_volatilities
         risk_contributions = risk_contributions.set_index(['Instrument', 'Position Type']).reindex(expanded_positions_vector.index).reset_index()
@@ -604,24 +618,24 @@ def main():
         st.write(f"**Daily VaR at 99% confidence:** {VaR_99_daily:.2f} bps")
         st.write(f"**Daily cVaR at 99% confidence:** {cVaR_99_daily:.2f} bps")
 
-        # Compute Portfolio Sensitivity to US 10Y Rates
+        # Compute Portfolio Sensitivity to Sensitivity Rate
 
         # Use returns of sensitivity_rate as independent variable
         if sensitivity_rate in price_returns_var.columns:
-            us_10y_returns = price_returns_var[sensitivity_rate] * 100  # Convert to bps
+            sensitivity_returns = price_returns_var[sensitivity_rate] * 100  # Convert to bps
 
-            # Align the portfolio returns and US 10Y returns
-            common_dates = portfolio_returns.index.intersection(us_10y_returns.index)
+            # Align the portfolio returns and sensitivity rate returns
+            common_dates = portfolio_returns.index.intersection(sensitivity_returns.index)
             portfolio_returns_aligned = portfolio_returns.loc[common_dates]
-            us_10y_returns_aligned = us_10y_returns.loc[common_dates]
+            sensitivity_returns_aligned = sensitivity_returns.loc[common_dates]
 
             # Check if there are overlapping dates
-            if portfolio_returns_aligned.empty or us_10y_returns_aligned.empty:
-                st.warning("Insufficient overlapping data between portfolio returns and US 10Y Future returns for sensitivity analysis.")
+            if portfolio_returns_aligned.empty or sensitivity_returns_aligned.empty:
+                st.warning("Insufficient overlapping data between portfolio returns and the selected sensitivity rate returns for sensitivity analysis.")
             else:
                 # Perform regression to find beta
-                covariance = np.cov(portfolio_returns_aligned, us_10y_returns_aligned)[0, 1]
-                variance = np.var(us_10y_returns_aligned)
+                covariance = np.cov(portfolio_returns_aligned, sensitivity_returns_aligned)[0, 1]
+                variance = np.var(sensitivity_returns_aligned)
                 beta = covariance / variance if variance != 0 else 0
 
                 # Determine sensitivity direction
@@ -639,22 +653,22 @@ def main():
                     yield_movement = 'no change'
                     pl_direction = 'no change'
 
-                # Sensitivity to a 1 bps move in US 10Y yields
+                # Sensitivity to a 1 bps move in sensitivity rate yields
                 sensitivity = beta * 1  # Sensitivity per 1 bps move
 
-                st.subheader('Portfolio Sensitivity to US 10Y Yields')
-                st.write(f"**Portfolio Beta to US 10Y Yields:** {beta:.4f} ({beta_direction} beta)")
-                st.write(f"The portfolio is expected to {pl_direction} when US 10Y yields are {yield_movement}.")
+                st.subheader(f'Portfolio Sensitivity to {sensitivity_rate} Yields')
+                st.write(f"**Portfolio Beta to {sensitivity_rate} Yields:** {beta:.4f} ({beta_direction} beta)")
+                st.write(f"The portfolio is expected to {pl_direction} when {sensitivity_rate} yields are {yield_movement}.")
 
-                # Expected P&L for a 1 bps move in US 10Y yields
+                # Expected P&L for a 1 bps move in sensitivity rate yields
                 if beta_direction == 'positive':
                     expected_pl = sensitivity
-                    st.write(f"**Expected P&L for a 1 bps fall in US 10Y yields:** Gain of {expected_pl:.4f} bps")
+                    st.write(f"**Expected P&L for a 1 bps fall in {sensitivity_rate} yields:** Gain of {expected_pl:.4f} bps")
                 elif beta_direction == 'negative':
                     expected_pl = sensitivity
-                    st.write(f"**Expected P&L for a 1 bps rise in US 10Y yields:** Gain of {expected_pl:.4f} bps")
+                    st.write(f"**Expected P&L for a 1 bps rise in {sensitivity_rate} yields:** Gain of {expected_pl:.4f} bps")
                 else:
-                    st.write("**Expected P&L for a 1 bps move in US 10Y yields:** No expected change")
+                    st.write(f"**Expected P&L for a 1 bps move in {sensitivity_rate} yields:** No expected change")
         else:
             st.warning(f"'{sensitivity_rate}' data not available for sensitivity analysis.")
             st.write("**Available Columns:**")
