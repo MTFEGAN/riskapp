@@ -42,14 +42,12 @@ def calculate_returns(df):
     price_returns = returns * -1
     return price_returns
 
-# Original instrument_country dictionary
 instrument_country = {
     'AU 3Y Future': 'AU',
     'AU 10Y Future': 'AU',
     'US 2Y Future': 'US',
     'US 5Y Future': 'US',
     'US 10Y Future': 'US',
-    # Add more if needed, fallback to 'Other' if not found
 }
 
 @st.cache_data(show_spinner=False)
@@ -116,6 +114,7 @@ def main():
     st.title('📈 Fixed Income Portfolio Risk Attribution')
     st.write("App initialized successfully.")
 
+    # instruments_data and classification remain the same as before
     instruments_data = pd.DataFrame({
         "Ticker": [
             "YM1 Comdty","XM1 Comdty","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty","UXYAFWD Comdty","WNAFWD Comdty","DUAFWD Comdty","OEAFWD Comdty","RXAFWD Comdty","GAFWD Comdty","IKAFWD Comdty","CNAFWD Comdty","JBAFWD Comdty","CCSWNI1 Curncy","ADSW2 Curncy","CDSO2 Curncy","USSW2 Curncy","EUSA2 Curncy","BPSWS2 BGN Curncy","NDSWAP2 BGN Curncy","I39302Y Index","MPSW2B BGN Curncy","MPSWF2B Curncy","SAFR1I2 BGN Curncy","CKSW2 BGN Curncy","PZSW2 BGN Curncy","KWSWNI2 BGN Curncy","CCSWNI2 CMPN Curncy","ADSW5 Curncy","CDSO5 Curncy","USSW5 Curncy","EUSA5 Curncy","BPSWS5 BGN Curncy","NDSWAP5 BGN Curncy","I39305Y Index","MPSW5E Curncy","MPSWF5E Curncy","SASW5 Curncy","CKSW5 Curncy","PZSW5 Curncy","KWSWNI5 Curncy","CCSWNI5 Curncy","JYSO5 Curncy","ADSW10 Curncy","CDSW10 Curncy","USSW10 Curncy","EUSA10 Curncy","BPSWS10 BGN Curncy","NDSWAP10 BGN Curncy","ADSW30 Curncy","CDSW30 Curncy","USSW30 Curncy","EUSA30 Curncy","BPSWS30 BGN Curncy","NDSWAP30 BGN Curncy","JYSO30 Curncy","MPSW10J BGN Curncy","MPSWF10J BGN Curncy","SASW10 Curncy","CKSW10 Curncy","PZSW10 Curncy","KWSWNI10 Curncy","CCSWNI10 Curncy","BPSWIT10 Curncy"
@@ -385,10 +384,7 @@ def main():
                             if not np.isnan(instr_beta):
                                 instrument_betas[instr] = (pos_val, instr_beta)
 
-                # Add Country column using guess_country_from_instrument_name
                 risk_contributions_formatted['Country'] = risk_contributions_formatted['Instrument'].apply(guess_country_from_instrument_name)
-
-                # Group by country and bucket
                 country_bucket = risk_contributions_formatted.groupby(['Country', 'Position Type']).agg({
                     'Contribution to Volatility (bps)': 'sum'
                 }).reset_index()
@@ -418,7 +414,6 @@ def main():
                         barmode='stack'
                     )
                     st.plotly_chart(fig_country_bucket, use_container_width=True)
-
                     st.write("Aggregated Risk Contributions by Country and Bucket:")
                     st.dataframe(country_bucket)
                 else:
@@ -436,6 +431,7 @@ def main():
                 st.write(f"**Daily VaR at 99%:** {fmt_val(VaR_99_daily)}")
                 st.write(f"**Daily cVaR at 99%:** {fmt_val(cVaR_99_daily)}")
 
+                # Always show the Beta section header
                 st.subheader("📉 Beta to US 10yr Rates")
                 if not np.isnan(portfolio_beta):
                     st.write(f"**Portfolio Beta to {sensitivity_rate}:** {portfolio_beta:.4f}")
@@ -448,13 +444,11 @@ def main():
                         beta_df['Position'] = beta_df['Position'].round(2)
                         beta_df['Beta'] = beta_df['Beta'].round(4)
                         st.dataframe(beta_df)
-
-                        # Footnote on interpretation
                         st.markdown("*Footnote:* If the US 10-year yield moves by 1bp, the portfolio performance changes by Beta × 1bp. For example, if Beta is 0.5 and US 10-year yields fall by 1bp, the portfolio is expected to rise by ~0.5bps.")
                     else:
                         st.write("No individual instrument betas to display.")
                 else:
-                    st.write(f"No portfolio beta computed. Check {sensitivity_rate} data and positions.")
+                    st.write("No portfolio beta computed. Check US 10Y Future data and positions.")
 
                 if not risk_contributions_formatted.empty:
                     st.subheader('📄 Detailed Risk Contributions by Instrument')
@@ -484,6 +478,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
