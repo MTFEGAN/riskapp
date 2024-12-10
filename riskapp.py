@@ -2,9 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import os
-from collections import OrderedDict  # Ensure OrderedDict is imported
-
-# Import AgGrid for advanced data grid features
+from collections import OrderedDict
+import plotly.express as px
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
 # Caching the data loading and processing functions to improve performance
@@ -85,12 +84,15 @@ def calculate_covariance_matrix(adjusted_price_returns, lookback_days):
     return covariance_matrix
 
 def main():
-    # Set page configuration to use the full width
+    # Set page configuration to use the wide layout
     st.set_page_config(page_title="Fixed Income Portfolio Risk Attribution", layout="wide")
-    st.title('Fixed Income Portfolio Risk Attribution')
-
+    st.title('📈 Fixed Income Portfolio Risk Attribution')
+    
+    # Define a consistent color theme
+    primary_color = "#1f77b4"  # You can choose any color you prefer
+    
     # Step 1: Define the instruments and their portfolios
-
+    
     instruments_data = pd.DataFrame({
         'Ticker': [
             'YM1 Comdty', 'XM1 Comdty', 'TUAFWD Comdty', 'FVAFWD Comdty',
@@ -144,7 +146,7 @@ def main():
     })
 
     # Define the sensitivity rate column with user selection
-    st.sidebar.header("Sensitivity Rate Configuration")
+    st.sidebar.header("🔍 Sensitivity Rate Configuration")
     excel_file = 'historical_data.xlsx'
 
     # Load historical data to get available columns
@@ -164,8 +166,8 @@ def main():
         else:
             sensitivity_rate = 'US 10Y Future'  # Default value if data loading failed
     else:
-        st.sidebar.error(f"Excel file '{excel_file}' not found. Please ensure it is in the app directory.")
-        return
+        st.sidebar.error(f"❌ Excel file '{excel_file}' not found. Please ensure it is in the app directory.")
+        st.stop()
 
     # Create tickers_data mapping Ticker to Instrument Name
     tickers_data = OrderedDict(zip(instruments_data['Ticker'], instruments_data['Instrument Name']))
@@ -309,7 +311,7 @@ def main():
         'Spread': [0.0]*len(em_instruments),
     })
 
-    # Define JavaScript code for conditional formatting
+    # Define JavaScript code for conditional formatting in AgGrid
     cell_style_jscode = JsCode("""
     function(params) {
         if (params.value > 0) {
@@ -330,387 +332,392 @@ def main():
     };
     """)
 
-    st.subheader('Input Positions for DM Portfolio')
-    st.write('Enter your positions for the Developed Markets (DM) portfolio below:')
-    gb_dm = GridOptionsBuilder.from_dataframe(default_positions_dm)
-    gb_dm.configure_columns(['Outright', 'Curve', 'Spread'], editable=True, cellStyle=cell_style_jscode)
-    gb_dm.configure_column('Instrument', editable=False)
-    gb_dm.configure_pagination(enabled=True, paginationPageSize=20)  # Enable pagination
-    grid_options_dm = gb_dm.build()
-    grid_response_dm = AgGrid(
-        default_positions_dm,
-        gridOptions=grid_options_dm,
-        height=300,
-        width='100%',
-        allow_unsafe_jscode=True,
-        enable_enterprise_modules=False,
-        reload_data=True
-    )
-    positions_data_dm = grid_response_dm['data']
+    # Create tabs for better organization
+    tabs = st.tabs(["📊 Risk Attribution", "📂 Input Positions", "⚙️ Settings"])
 
-    st.subheader('Input Positions for EM Portfolio')
-    st.write('Enter your positions for the Emerging Markets (EM) portfolio below:')
-    gb_em = GridOptionsBuilder.from_dataframe(default_positions_em)
-    gb_em.configure_columns(['Outright', 'Curve', 'Spread'], editable=True, cellStyle=cell_style_jscode)
-    gb_em.configure_column('Instrument', editable=False)
-    gb_em.configure_pagination(enabled=True, paginationPageSize=20)  # Enable pagination
-    grid_options_em = gb_em.build()
-    grid_response_em = AgGrid(
-        default_positions_em,
-        gridOptions=grid_options_em,
-        height=300,
-        width='100%',
-        allow_unsafe_jscode=True,
-        enable_enterprise_modules=False,
-        reload_data=True
-    )
-    positions_data_em = grid_response_em['data']
+    with tabs[1]:
+        st.header("🔄 Input Positions")
+        st.write("Enter your positions for the Developed Markets (DM) and Emerging Markets (EM) portfolios below.")
 
-    # Dropdown for volatility lookback period
-    st.subheader('Select Lookback Periods')
-    volatility_period_options = {
-        '1 month': 21,
-        '3 months': 63,
-        '6 months': 126,
-        '1 year': 252,
-        '3 years': 756,
-        '5 years': 1260,
-        '10 years': 2520
-    }
-    volatility_period = st.selectbox('Select lookback period for volatility calculations:', list(volatility_period_options.keys()), index=3)
-    volatility_lookback_days = volatility_period_options[volatility_period]
+        # Use columns to separate DM and EM inputs side by side
+        dm_col, em_col = st.columns(2)
 
-    # Dropdown for VaR calculation period
-    var_period_options = {
-        '5 years': 1260,
-        '10 years': 2520,
-        '15 years': 3780
-    }
-    var_period = st.selectbox('Select lookback period for VaR calculations:', list(var_period_options.keys()), index=1)
-    var_lookback_days = var_period_options[var_period]
-
-    # Step 3: Run Risk Attribution when button is clicked
-    if st.button('Run Risk Attribution'):
-        st.write('Calculating risk attribution...')
-        st.write('This may take a few moments.')
-
-        # Step 4: Load Historical Data from the Excel File
-        if not os.path.exists(excel_file):
-            st.error(f"Excel file '{excel_file}' not found. Please ensure it is in the app directory.")
-            return
-
-        # Load and process historical data
-        df = load_historical_data(excel_file)
-        if df is None:
-            return  # Error message already displayed
-
-        df = process_yields(df)
-        price_returns = calculate_returns(df)
-        adjusted_price_returns = adjust_time_zones(price_returns, instrument_country)
-
-        # Check if adjusted_price_returns is empty
-        if adjusted_price_returns.empty:
-            st.warning("No data available after adjusting for time zones.")
-            return
-
-        # Calculate volatilities and covariance matrix
-        volatilities = calculate_volatilities(adjusted_price_returns, volatility_lookback_days)
-        covariance_matrix = calculate_covariance_matrix(adjusted_price_returns, volatility_lookback_days)
-
-        # Step 5: Process User Input Positions
-
-        # Convert positions_data to the required format
-        positions_data_dm = pd.DataFrame(positions_data_dm).astype({'Outright': float, 'Curve': float, 'Spread': float})
-        positions_data_em = pd.DataFrame(positions_data_em).astype({'Outright': float, 'Curve': float, 'Spread': float})
-
-        # Combine DM and EM positions
-        positions_data_dm['Portfolio'] = 'DM'
-        positions_data_em['Portfolio'] = 'EM'
-        positions_data = pd.concat([positions_data_dm, positions_data_em], ignore_index=True)
-
-        # Expand positions to have separate entries for 'Outright', 'Curve', 'Spread'
-        positions_list = []
-        for idx, row in positions_data.iterrows():
-            instrument = row['Instrument']
-            portfolio = row['Portfolio']
-            for position_type in ['Outright', 'Curve', 'Spread']:
-                position_value = row[position_type]
-                if position_value != 0:
-                    positions_list.append({
-                        'Instrument': instrument,
-                        'Position Type': position_type,
-                        'Position': position_value,
-                        'Portfolio': portfolio
-                    })
-
-        expanded_positions_data = pd.DataFrame(positions_list)
-
-        if expanded_positions_data.empty:
-            st.warning("No positions entered. Please enter positions and try again.")
-            return
-
-        # Create expanded positions vector
-        expanded_positions_vector = expanded_positions_data.set_index(['Instrument', 'Position Type'])['Position']
-
-        # Ensure that the sensitivity rate is included even if the user has no position in it
-        if sensitivity_rate not in expanded_positions_vector.index.get_level_values('Instrument'):
-            # Add the sensitivity_rate with zero position
-            zero_position = pd.Series(
-                0.0, 
-                index=pd.MultiIndex.from_tuples([(sensitivity_rate, 'Outright')], names=['Instrument', 'Position Type'])
+        with dm_col:
+            st.subheader('📈 DM Portfolio Positions')
+            gb_dm = GridOptionsBuilder.from_dataframe(default_positions_dm)
+            gb_dm.configure_columns(['Outright', 'Curve', 'Spread'], editable=True, cellStyle=cell_style_jscode)
+            gb_dm.configure_column('Instrument', editable=False)
+            gb_dm.configure_pagination(enabled=True, paginationPageSize=20)  # Enable pagination
+            grid_options_dm = gb_dm.build()
+            grid_response_dm = AgGrid(
+                default_positions_dm,
+                gridOptions=grid_options_dm,
+                height=400,
+                width='100%',
+                allow_unsafe_jscode=True,
+                enable_enterprise_modules=False,
+                reload_data=True
             )
-            expanded_positions_vector = pd.concat([expanded_positions_vector, zero_position])
+            positions_data_dm = grid_response_dm['data']
 
-        # Create an empty DataFrame for the expanded covariance matrix
-        expanded_index = expanded_positions_vector.index
-        expanded_cov_matrix = pd.DataFrame(index=expanded_index, columns=expanded_index)
-
-        # Populate the expanded covariance matrix (vectorized)
-        instruments = expanded_positions_vector.index.get_level_values('Instrument').unique()
-        
-        # Check if all instruments are present in the covariance matrix
-        missing_instruments = [instr for instr in instruments if instr not in covariance_matrix.index]
-        if missing_instruments:
-            st.warning(f"The following instruments are missing from the covariance matrix and will be excluded from calculations: {missing_instruments}")
-            # Remove missing instruments from positions_vector and expanded_cov_matrix
-            # Drop any positions corresponding to missing instruments
-            expanded_positions_vector = expanded_positions_vector.drop(
-                labels=[
-                    (instr, pos_type) 
-                    for instr in missing_instruments 
-                    for pos_type in ['Outright', 'Curve', 'Spread'] 
-                    if (instr, pos_type) in expanded_positions_vector.index
-                ], 
-                errors='ignore'
+        with em_col:
+            st.subheader('🌍 EM Portfolio Positions')
+            gb_em = GridOptionsBuilder.from_dataframe(default_positions_em)
+            gb_em.configure_columns(['Outright', 'Curve', 'Spread'], editable=True, cellStyle=cell_style_jscode)
+            gb_em.configure_column('Instrument', editable=False)
+            gb_em.configure_pagination(enabled=True, paginationPageSize=20)  # Enable pagination
+            grid_options_em = gb_em.build()
+            grid_response_em = AgGrid(
+                default_positions_em,
+                gridOptions=grid_options_em,
+                height=400,
+                width='100%',
+                allow_unsafe_jscode=True,
+                enable_enterprise_modules=False,
+                reload_data=True
             )
+            positions_data_em = grid_response_em['data']
+
+    with tabs[2]:
+        st.header("⚙️ Configuration Settings")
+        st.write("Adjust the lookback periods for volatility and VaR calculations.")
+
+        # Dropdown for volatility lookback period
+        volatility_period_options = {
+            '📅 1 month': 21,
+            '📆 3 months': 63,
+            '📅 6 months': 126,
+            '🗓️ 1 year': 252,
+            '📅 3 years': 756,
+            '📆 5 years': 1260,
+            '📅 10 years': 2520
+        }
+        volatility_period = st.selectbox('Select lookback period for volatility calculations:', list(volatility_period_options.keys()), index=3)
+        volatility_lookback_days = volatility_period_options[volatility_period]
+
+        # Dropdown for VaR calculation period
+        var_period_options = {
+            '📆 5 years': 1260,
+            '📆 10 years': 2520,
+            '📆 15 years': 3780
+        }
+        var_period = st.selectbox('Select lookback period for VaR calculations:', list(var_period_options.keys()), index=1)
+        var_lookback_days = var_period_options[var_period]
+
+    with tabs[0]:
+        st.header("📊 Risk Attribution Results")
+
+        # Step 3: Run Risk Attribution when button is clicked
+        if st.button('🚀 Run Risk Attribution'):
+            st.info('Calculating risk attribution... This may take a few moments.')
+
+            # Step 4: Load Historical Data from the Excel File
+            if not os.path.exists(excel_file):
+                st.error(f"❌ Excel file '{excel_file}' not found. Please ensure it is in the app directory.")
+                return
+
+            # Load and process historical data
+            df = load_historical_data(excel_file)
+            if df is None:
+                return  # Error message already displayed
+
+            df = process_yields(df)
+            price_returns = calculate_returns(df)
+            adjusted_price_returns = adjust_time_zones(price_returns, instrument_country)
+
+            # Check if adjusted_price_returns is empty
+            if adjusted_price_returns.empty:
+                st.warning("⚠️ No data available after adjusting for time zones.")
+                return
+
+            # Calculate volatilities and covariance matrix
+            volatilities = calculate_volatilities(adjusted_price_returns, volatility_lookback_days)
+            covariance_matrix = calculate_covariance_matrix(adjusted_price_returns, volatility_lookback_days)
+
+            # Step 5: Process User Input Positions
+
+            # Convert positions_data to the required format
+            positions_data_dm = pd.DataFrame(positions_data_dm).astype({'Outright': float, 'Curve': float, 'Spread': float})
+            positions_data_em = pd.DataFrame(positions_data_em).astype({'Outright': float, 'Curve': float, 'Spread': float})
+
+            # Combine DM and EM positions
+            positions_data_dm['Portfolio'] = 'DM'
+            positions_data_em['Portfolio'] = 'EM'
+            positions_data = pd.concat([positions_data_dm, positions_data_em], ignore_index=True)
+
+            # Expand positions to have separate entries for 'Outright', 'Curve', 'Spread'
+            positions_list = []
+            for idx, row in positions_data.iterrows():
+                instrument = row['Instrument']
+                portfolio = row['Portfolio']
+                for position_type in ['Outright', 'Curve', 'Spread']:
+                    position_value = row[position_type]
+                    if position_value != 0:
+                        positions_list.append({
+                            'Instrument': instrument,
+                            'Position Type': position_type,
+                            'Position': position_value,
+                            'Portfolio': portfolio
+                        })
+
+            expanded_positions_data = pd.DataFrame(positions_list)
+
+            if expanded_positions_data.empty:
+                st.warning("⚠️ No positions entered. Please enter positions and try again.")
+                return
+
+            # Create expanded positions vector
+            expanded_positions_vector = expanded_positions_data.set_index(['Instrument', 'Position Type'])['Position']
+
+            # Ensure that the sensitivity rate is included even if the user has no position in it
+            if sensitivity_rate not in expanded_positions_vector.index.get_level_values('Instrument'):
+                # Add the sensitivity_rate with zero position
+                zero_position = pd.Series(
+                    0.0, 
+                    index=pd.MultiIndex.from_tuples([(sensitivity_rate, 'Outright')], names=['Instrument', 'Position Type'])
+                )
+                expanded_positions_vector = pd.concat([expanded_positions_vector, zero_position])
+
+            # Create an empty DataFrame for the expanded covariance matrix
             expanded_index = expanded_positions_vector.index
             expanded_cov_matrix = pd.DataFrame(index=expanded_index, columns=expanded_index)
+
+            # Populate the expanded covariance matrix (vectorized)
             instruments = expanded_positions_vector.index.get_level_values('Instrument').unique()
+            
+            # Check if all instruments are present in the covariance matrix
+            missing_instruments = [instr for instr in instruments if instr not in covariance_matrix.index]
+            if missing_instruments:
+                st.warning(f"⚠️ The following instruments are missing from the covariance matrix and will be excluded from calculations: {missing_instruments}")
+                # Remove missing instruments from positions_vector and expanded_cov_matrix
+                # Drop any positions corresponding to missing instruments
+                expanded_positions_vector = expanded_positions_vector.drop(
+                    labels=[
+                        (instr, pos_type) 
+                        for instr in missing_instruments 
+                        for pos_type in ['Outright', 'Curve', 'Spread'] 
+                        if (instr, pos_type) in expanded_positions_vector.index
+                    ], 
+                    errors='ignore'
+                )
+                expanded_index = expanded_positions_vector.index
+                expanded_cov_matrix = pd.DataFrame(index=expanded_index, columns=expanded_index)
+                instruments = expanded_positions_vector.index.get_level_values('Instrument').unique()
 
-        # Re-extract covariance_submatrix with available instruments
-        covariance_submatrix = covariance_matrix.loc[instruments, instruments]
+            # Re-extract covariance_submatrix with available instruments
+            covariance_submatrix = covariance_matrix.loc[instruments, instruments]
 
-        # Assign covariance values to the expanded covariance matrix
-        for pos1 in expanded_index:
-            for pos2 in expanded_index:
-                instr1 = pos1[0]
-                instr2 = pos2[0]
-                var_i_j = covariance_submatrix.loc[instr1, instr2]
-                expanded_cov_matrix.loc[pos1, pos2] = var_i_j
+            # Assign covariance values to the expanded covariance matrix
+            for pos1 in expanded_index:
+                for pos2 in expanded_index:
+                    instr1 = pos1[0]
+                    instr2 = pos2[0]
+                    var_i_j = covariance_submatrix.loc[instr1, instr2]
+                    expanded_cov_matrix.loc[pos1, pos2] = var_i_j
 
-        expanded_cov_matrix = expanded_cov_matrix.astype(float)
+            expanded_cov_matrix = expanded_cov_matrix.astype(float)
 
-        # Compute Portfolio Volatility
-        portfolio_variance = np.dot(expanded_positions_vector.T, np.dot(expanded_cov_matrix, expanded_positions_vector))
-        portfolio_volatility = np.sqrt(portfolio_variance)  # Volatility in bps
+            # Compute Portfolio Volatility
+            portfolio_variance = np.dot(expanded_positions_vector.T, np.dot(expanded_cov_matrix, expanded_positions_vector))
+            portfolio_volatility = np.sqrt(portfolio_variance)  # Volatility in bps
 
-        # Compute Each Position's Stand-alone Volatility and Contribution
+            # Compute Each Position's Stand-alone Volatility and Contribution
 
-        # Map instrument volatilities to expanded positions
-        instrument_volatilities = volatilities
-        expanded_volatilities = expanded_positions_vector.index.get_level_values('Instrument').map(instrument_volatilities)
-        expanded_volatilities = pd.Series(expanded_volatilities.values, index=expanded_positions_vector.index)
+            # Map instrument volatilities to expanded positions
+            instrument_volatilities = volatilities
+            expanded_volatilities = expanded_positions_vector.index.get_level_values('Instrument').map(instrument_volatilities)
+            expanded_volatilities = pd.Series(expanded_volatilities.values, index=expanded_positions_vector.index)
 
-        # Instrument Volatility per 1Y Duration is the instrument's annualized volatility in bps
-        instrument_volatilities_per_1y = expanded_volatilities
+            # Instrument Volatility per 1Y Duration is the instrument's annualized volatility in bps
+            instrument_volatilities_per_1y = expanded_volatilities
 
-        # Stand-alone volatilities
-        standalone_volatilities = expanded_positions_vector.abs() * expanded_volatilities
+            # Stand-alone volatilities
+            standalone_volatilities = expanded_positions_vector.abs() * expanded_volatilities
 
-        # Marginal contributions to variance
-        marginal_contributions = expanded_cov_matrix.dot(expanded_positions_vector)
+            # Marginal contributions to variance
+            marginal_contributions = expanded_cov_matrix.dot(expanded_positions_vector)
 
-        # Contribution to variance
-        contribution_to_variance = expanded_positions_vector * marginal_contributions
+            # Contribution to variance
+            contribution_to_variance = expanded_positions_vector * marginal_contributions
 
-        # Contribution to volatility
-        contribution_to_volatility = contribution_to_variance / portfolio_volatility
+            # Contribution to volatility
+            contribution_to_volatility = contribution_to_variance / portfolio_volatility
 
-        # Percentage contribution
-        percent_contribution = (contribution_to_volatility / portfolio_volatility) * 100
+            # Percentage contribution
+            percent_contribution = (contribution_to_volatility / portfolio_volatility) * 100
 
-        # Create a DataFrame for reporting
-        risk_contributions = expanded_positions_data.copy()
-        
-        # Ensure 'Instrument' and 'Position Type' are set correctly
-        if not {'Instrument', 'Position Type'}.issubset(risk_contributions.columns):
-            st.error("Positions data is missing 'Instrument' or 'Position Type' columns.")
-            return
+            # Create a DataFrame for reporting
+            risk_contributions = expanded_positions_data.copy()
+            
+            # Ensure 'Instrument' and 'Position Type' are set correctly
+            if not {'Instrument', 'Position Type'}.issubset(risk_contributions.columns):
+                st.error("⚠️ Positions data is missing 'Instrument' or 'Position Type' columns.")
+                return
 
-        # **Ensure 'US 10Y Future' is included in risk_contributions only if it has a non-zero position**
-        # Since we've already appended 'US 10Y Future' with zero position, we will filter it out in the formatted DataFrame
+            # Merge to align with expanded_volatilities
+            risk_contributions = risk_contributions.set_index(['Instrument', 'Position Type']).reindex(expanded_positions_vector.index).reset_index()
 
-        # Merge to align with expanded_volatilities
-        risk_contributions = risk_contributions.set_index(['Instrument', 'Position Type']).reindex(expanded_positions_vector.index).reset_index()
+            risk_contributions['Position Stand-alone Volatility'] = standalone_volatilities.values
+            risk_contributions['Contribution to Volatility (bps)'] = contribution_to_volatility.values
+            risk_contributions['Percent Contribution (%)'] = percent_contribution.values
+            risk_contributions['Instrument Volatility per 1Y Duration (bps)'] = instrument_volatilities_per_1y.values
 
-        risk_contributions['Position Stand-alone Volatility'] = standalone_volatilities.values
-        risk_contributions['Contribution to Volatility (bps)'] = contribution_to_volatility.values
-        risk_contributions['Percent Contribution (%)'] = percent_contribution.values
-        risk_contributions['Instrument Volatility per 1Y Duration (bps)'] = instrument_volatilities_per_1y.values
+            # Format the DataFrame
+            risk_contributions_formatted = risk_contributions.copy()
+            risk_contributions_formatted['Position'] = risk_contributions_formatted['Position'].astype(float)
+            risk_contributions_formatted['Position Stand-alone Volatility'] = risk_contributions_formatted['Position Stand-alone Volatility'].astype(float)
+            risk_contributions_formatted['Contribution to Volatility (bps)'] = risk_contributions_formatted['Contribution to Volatility (bps)'].astype(float)
+            risk_contributions_formatted['Percent Contribution (%)'] = risk_contributions_formatted['Percent Contribution (%)'].astype(float)
+            risk_contributions_formatted['Instrument Volatility per 1Y Duration (bps)'] = risk_contributions_formatted['Instrument Volatility per 1Y Duration (bps)'].astype(float)
 
-        # Format the DataFrame
-        risk_contributions_formatted = risk_contributions.copy()
-        risk_contributions_formatted['Position'] = risk_contributions_formatted['Position'].astype(float)
-        risk_contributions_formatted['Position Stand-alone Volatility'] = risk_contributions_formatted['Position Stand-alone Volatility'].astype(float)
-        risk_contributions_formatted['Contribution to Volatility (bps)'] = risk_contributions_formatted['Contribution to Volatility (bps)'].astype(float)
-        risk_contributions_formatted['Percent Contribution (%)'] = risk_contributions_formatted['Percent Contribution (%)'].astype(float)
-        risk_contributions_formatted['Instrument Volatility per 1Y Duration (bps)'] = risk_contributions_formatted['Instrument Volatility per 1Y Duration (bps)'].astype(float)
+            # Rearrange columns
+            risk_contributions_formatted = risk_contributions_formatted[
+                ['Instrument', 'Position Type', 'Position', 'Position Stand-alone Volatility',
+                 'Instrument Volatility per 1Y Duration (bps)', 'Contribution to Volatility (bps)', 'Percent Contribution (%)', 'Portfolio']
+            ]
 
-        # Rearrange columns
-        risk_contributions_formatted = risk_contributions_formatted[
-            ['Instrument', 'Position Type', 'Position', 'Position Stand-alone Volatility',
-             'Instrument Volatility per 1Y Duration (bps)', 'Contribution to Volatility (bps)', 'Percent Contribution (%)', 'Portfolio']
-        ]
+            # **Exclude Rows with Zero or NaN Positions**
+            risk_contributions_formatted = risk_contributions_formatted[
+                risk_contributions_formatted['Position'].notna() & (risk_contributions_formatted['Position'] != 0)
+            ]
 
-        # **Exclude Rows with Zero or NaN Positions**
-        risk_contributions_formatted = risk_contributions_formatted[
-            risk_contributions_formatted['Position'].notna() & (risk_contributions_formatted['Position'] != 0)
-        ]
+            # Add bar charts to 'Percent Contribution (%)' column using Plotly
+            fig_risk_contributions = px.bar(
+                risk_contributions_formatted,
+                x='Instrument',
+                y='Percent Contribution (%)',
+                color='Portfolio',
+                title='Risk Contributions by Instrument',
+                labels={'Percent Contribution (%)': 'Percent Contribution (%)'},
+                hover_data=['Position', 'Contribution to Volatility (bps)'],
+                height=500
+            )
+            fig_risk_contributions.update_layout(showlegend=True, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
 
-        # Add bar charts to 'Percent Contribution (%)' column
-        styled_risk_contributions = risk_contributions_formatted.style.bar(
-            subset=['Percent Contribution (%)'], color='#d65f5f'
-        ).format({
-            'Position': '{:,.4f}',
-            'Position Stand-alone Volatility': '{:,.2f}',
-            'Instrument Volatility per 1Y Duration (bps)': '{:,.2f}',
-            'Contribution to Volatility (bps)': '{:,.2f}',
-            'Percent Contribution (%)': '{:,.2f}'
-        })
+            # Render the bar chart
+            st.plotly_chart(fig_risk_contributions, use_container_width=True)
 
-        # Render the styled DataFrame in Streamlit
-        st.subheader('Risk Contributions by Instrument')
-        st.markdown(styled_risk_contributions.to_html(), unsafe_allow_html=True)
+            # Compute risk contributions by Portfolio (DM and EM)
+            risk_contributions_by_portfolio = risk_contributions_formatted.groupby('Portfolio').agg({
+                'Contribution to Volatility (bps)': 'sum'
+            })
+            risk_contributions_by_portfolio['Percent Contribution (%)'] = (risk_contributions_by_portfolio['Contribution to Volatility (bps)'] / portfolio_volatility) * 100
 
-        # Compute risk contributions by Portfolio (DM and EM)
-        risk_contributions_by_portfolio = risk_contributions_formatted.groupby('Portfolio').agg({
-            'Contribution to Volatility (bps)': 'sum'
-        })
-        risk_contributions_by_portfolio['Percent Contribution (%)'] = (risk_contributions_by_portfolio['Contribution to Volatility (bps)'] / portfolio_volatility) * 100
+            # Create a bar chart for risk contributions by portfolio
+            fig_portfolio_risk = px.pie(
+                risk_contributions_by_portfolio.reset_index(),
+                names='Portfolio',
+                values='Contribution to Volatility (bps)',
+                title='Risk Contributions by Portfolio',
+                hole=0.4
+            )
+            fig_portfolio_risk.update_traces(textposition='inside', textinfo='percent+label')
+            fig_portfolio_risk.update_layout(showlegend=True, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
 
-        # Display risk contributions by Portfolio
-        st.subheader('Risk Contributions by Portfolio')
-        st.write(risk_contributions_by_portfolio)
+            # Render the pie chart
+            st.plotly_chart(fig_portfolio_risk, use_container_width=True)
 
-        # Perform risk attribution for DM and EM portfolios separately
-        # For DM Portfolio
-        dm_positions_data = expanded_positions_data[expanded_positions_data['Portfolio'] == 'DM']
-        if not dm_positions_data.empty:
-            dm_positions_vector = dm_positions_data.set_index(['Instrument', 'Position Type'])['Position']
-            # Extract relevant covariance submatrix
-            dm_cov_submatrix = expanded_cov_matrix.loc[dm_positions_vector.index, dm_positions_vector.index]
-            dm_variance = np.dot(dm_positions_vector.T, np.dot(dm_cov_submatrix, dm_positions_vector))
-            dm_volatility = np.sqrt(dm_variance)
-        else:
-            dm_volatility = 0
+            # Display key metrics using Streamlit's metric component
+            metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
 
-        # For EM Portfolio
-        em_positions_data = expanded_positions_data[expanded_positions_data['Portfolio'] == 'EM']
-        if not em_positions_data.empty:
-            em_positions_vector = em_positions_data.set_index(['Instrument', 'Position Type'])['Position']
-            # Extract relevant covariance submatrix
-            em_cov_submatrix = expanded_cov_matrix.loc[em_positions_vector.index, em_positions_vector.index]
-            em_variance = np.dot(em_positions_vector.T, np.dot(em_cov_submatrix, em_positions_vector))
-            em_volatility = np.sqrt(em_variance)
-        else:
-            em_volatility = 0
+            metrics_col1.metric(label="📊 Total Portfolio Volatility", value=f"{portfolio_volatility:.2f} bps")
+            metrics_col2.metric(label="📉 Daily VaR (95%)", value=f"{VaR_95_daily:.2f} bps")
+            metrics_col3.metric(label="📉 Daily VaR (99%)", value=f"{VaR_99_daily:.2f} bps")
+            metrics_col4.metric(label="📈 Daily cVaR (95%)", value=f"{cVaR_95_daily:.2f} bps")
 
-        st.write(f"**DM Portfolio Volatility (Annualized):** {dm_volatility:.2f} bps")
-        st.write(f"**EM Portfolio Volatility (Annualized):** {em_volatility:.2f} bps")
+            # Display VaR and cVaR metrics
+            st.subheader('📈 Value at Risk (VaR) and Conditional VaR (cVaR)')
+            st.write(f"**Daily VaR at 95% confidence:** {VaR_95_daily:.2f} bps")
+            st.write(f"**Daily cVaR at 95% confidence:** {cVaR_95_daily:.2f} bps")
+            st.write(f"**Daily VaR at 99% confidence:** {VaR_99_daily:.2f} bps")
+            st.write(f"**Daily cVaR at 99% confidence:** {cVaR_99_daily:.2f} bps")
 
-        # Compute VaR and cVaR at 95% and 99% Confidence Levels
+            # Compute Portfolio Sensitivity to Sensitivity Rate
 
-        # Use the selected lookback period for VaR calculations
-        price_returns_var = adjusted_price_returns.tail(var_lookback_days)
+            # Use returns of sensitivity_rate as independent variable
+            if sensitivity_rate in price_returns_var.columns:
+                sensitivity_returns = price_returns_var[sensitivity_rate] * 100  # Convert to bps
 
-        # Aggregate positions per instrument
-        positions_per_instrument = expanded_positions_vector.groupby('Instrument').sum()
+                # Align the portfolio returns and sensitivity rate returns
+                common_dates = portfolio_returns.index.intersection(sensitivity_returns.index)
+                portfolio_returns_aligned = portfolio_returns.loc[common_dates]
+                sensitivity_returns_aligned = sensitivity_returns.loc[common_dates]
 
-        # Ensure all instruments in positions_per_instrument are present in price_returns_var
-        available_instruments = positions_per_instrument.index.intersection(price_returns_var.columns)
-        positions_per_instrument = positions_per_instrument.loc[available_instruments]
-        price_returns_var = price_returns_var[available_instruments]
+                # Check if there are overlapping dates
+                if portfolio_returns_aligned.empty or sensitivity_returns_aligned.empty:
+                    st.warning("⚠️ Insufficient overlapping data between portfolio returns and the selected sensitivity rate returns for sensitivity analysis.")
+                else:
+                    # Perform regression to find beta
+                    covariance = np.cov(portfolio_returns_aligned, sensitivity_returns_aligned)[0, 1]
+                    variance = np.var(sensitivity_returns_aligned)
+                    beta = covariance / variance if variance != 0 else 0
 
-        # Compute portfolio returns
-        portfolio_returns = price_returns_var.dot(positions_per_instrument) * 100  # Convert returns to bps
+                    # Determine sensitivity direction
+                    if beta > 0:
+                        beta_direction = 'positive'
+                        yield_movement = 'falling'
+                        pl_direction = 'gain'
+                    elif beta < 0:
+                        beta_direction = 'negative'
+                        yield_movement = 'rising'
+                        pl_direction = 'gain'
+                        beta = -beta  # Take absolute value for clarity
+                    else:
+                        beta_direction = 'zero'
+                        yield_movement = 'no change'
+                        pl_direction = 'no change'
 
-        # Daily VaR
-        VaR_95_daily = -np.percentile(portfolio_returns, 5)
-        VaR_99_daily = -np.percentile(portfolio_returns, 1)
+                    # Sensitivity to a 1 bps move in sensitivity rate yields
+                    sensitivity = beta * 1  # Sensitivity per 1 bps move
 
-        # cVaR calculations
-        cVaR_95_daily = -portfolio_returns[portfolio_returns <= -VaR_95_daily].mean()
-        cVaR_99_daily = -portfolio_returns[portfolio_returns <= -VaR_99_daily].mean()
+                    st.subheader(f'📉 Portfolio Sensitivity to {sensitivity_rate} Yields')
+                    st.write(f"**Portfolio Beta to {sensitivity_rate} Yields:** {beta:.4f} ({beta_direction} beta)")
+                    st.write(f"The portfolio is expected to {pl_direction} when {sensitivity_rate} yields are {yield_movement}.")
 
-        # Display VaR and cVaR metrics
-        st.subheader('Value at Risk (VaR) and Conditional VaR (cVaR)')
-        st.write(f"**Daily VaR at 95% confidence:** {VaR_95_daily:.2f} bps")
-        st.write(f"**Daily cVaR at 95% confidence:** {cVaR_95_daily:.2f} bps")
-        st.write(f"**Daily VaR at 99% confidence:** {VaR_99_daily:.2f} bps")
-        st.write(f"**Daily cVaR at 99% confidence:** {cVaR_99_daily:.2f} bps")
+                    # Expected P&L for a 1 bps move in sensitivity rate yields
+                    if beta_direction == 'positive':
+                        expected_pl = sensitivity
+                        st.write(f"**Expected P&L for a 1 bps fall in {sensitivity_rate} yields:** Gain of {expected_pl:.4f} bps")
+                    elif beta_direction == 'negative':
+                        expected_pl = sensitivity
+                        st.write(f"**Expected P&L for a 1 bps rise in {sensitivity_rate} yields:** Gain of {expected_pl:.4f} bps")
+                    else:
+                        st.write(f"**Expected P&L for a 1 bps move in {sensitivity_rate} yields:** No expected change")
 
-        # Compute Portfolio Sensitivity to Sensitivity Rate
+                    # **Visualization: Scatter Plot with Regression Line**
+                    fig_sensitivity = px.scatter(
+                        x=sensitivity_returns_aligned,
+                        y=portfolio_returns_aligned,
+                        trendline="ols",
+                        labels={
+                            'x': f'{sensitivity_rate} Returns (bps)',
+                            'y': 'Portfolio Returns (bps)'
+                        },
+                        title=f'Relationship between Portfolio Returns and {sensitivity_rate} Returns',
+                        height=500
+                    )
+                    fig_sensitivity.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+                    
+                    # Extract trendline results
+                    results = px.get_trendline_results(fig_sensitivity)
+                    if not results.empty:
+                        slope = results.iloc[0]["px_fit_results"].params[1]
+                        intercept = results.iloc[0]["px_fit_results"].params[0]
+                        fig_sensitivity.add_annotation(
+                            x=0.05,
+                            y=0.95,
+                            xref="paper",
+                            yref="paper",
+                            text=f"Beta: {beta:.4f}",
+                            showarrow=False,
+                            font=dict(size=12, color="black")
+                        )
 
-        # Use returns of sensitivity_rate as independent variable
-        if sensitivity_rate in price_returns_var.columns:
-            sensitivity_returns = price_returns_var[sensitivity_rate] * 100  # Convert to bps
-
-            # Align the portfolio returns and sensitivity rate returns
-            common_dates = portfolio_returns.index.intersection(sensitivity_returns.index)
-            portfolio_returns_aligned = portfolio_returns.loc[common_dates]
-            sensitivity_returns_aligned = sensitivity_returns.loc[common_dates]
-
-            # Check if there are overlapping dates
-            if portfolio_returns_aligned.empty or sensitivity_returns_aligned.empty:
-                st.warning("Insufficient overlapping data between portfolio returns and the selected sensitivity rate returns for sensitivity analysis.")
+                    st.plotly_chart(fig_sensitivity, use_container_width=True)
             else:
-                # Perform regression to find beta
-                covariance = np.cov(portfolio_returns_aligned, sensitivity_returns_aligned)[0, 1]
-                variance = np.var(sensitivity_returns_aligned)
-                beta = covariance / variance if variance != 0 else 0
+                st.warning(f"⚠️ '{sensitivity_rate}' data not available for sensitivity analysis.")
+                st.write("**Available Columns:**")
+                st.write(price_returns_var.columns.tolist())
 
-                # Determine sensitivity direction
-                if beta > 0:
-                    beta_direction = 'positive'
-                    yield_movement = 'falling'
-                    pl_direction = 'gain'
-                elif beta < 0:
-                    beta_direction = 'negative'
-                    yield_movement = 'rising'
-                    pl_direction = 'gain'
-                    beta = -beta  # Take absolute value for clarity
-                else:
-                    beta_direction = 'zero'
-                    yield_movement = 'no change'
-                    pl_direction = 'no change'
-
-                # Sensitivity to a 1 bps move in sensitivity rate yields
-                sensitivity = beta * 1  # Sensitivity per 1 bps move
-
-                st.subheader(f'Portfolio Sensitivity to {sensitivity_rate} Yields')
-                st.write(f"**Portfolio Beta to {sensitivity_rate} Yields:** {beta:.4f} ({beta_direction} beta)")
-                st.write(f"The portfolio is expected to {pl_direction} when {sensitivity_rate} yields are {yield_movement}.")
-
-                # Expected P&L for a 1 bps move in sensitivity rate yields
-                if beta_direction == 'positive':
-                    expected_pl = sensitivity
-                    st.write(f"**Expected P&L for a 1 bps fall in {sensitivity_rate} yields:** Gain of {expected_pl:.4f} bps")
-                elif beta_direction == 'negative':
-                    expected_pl = sensitivity
-                    st.write(f"**Expected P&L for a 1 bps rise in {sensitivity_rate} yields:** Gain of {expected_pl:.4f} bps")
-                else:
-                    st.write(f"**Expected P&L for a 1 bps move in {sensitivity_rate} yields:** No expected change")
-        else:
-            st.warning(f"'{sensitivity_rate}' data not available for sensitivity analysis.")
-            st.write("**Available Columns:**")
-            st.write(price_returns_var.columns.tolist())
-
-        # Display Portfolio Volatility
-        st.subheader('Total Portfolio Volatility')
-        st.write(f"**Total Portfolio Volatility (Annualized):** {portfolio_volatility:.2f} bps")
-
-    else:
-        st.info('Click "Run Risk Attribution" to calculate risk metrics.')
-
-if __name__ == '__main__':
-    main()
+    if __name__ == '__main__':
+        main()

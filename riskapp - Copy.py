@@ -7,6 +7,83 @@ from collections import OrderedDict  # Ensure OrderedDict is imported
 # Import AgGrid for advanced data grid features
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
+# Caching the data loading and processing functions to improve performance
+@st.cache_data
+def load_historical_data(excel_file):
+    try:
+        # Load Excel file
+        excel = pd.ExcelFile(excel_file)
+        # Read all sheets and combine them (assuming data is spread across multiple sheets)
+        df_list = []
+        for sheet in excel.sheet_names:
+            df_sheet = excel.parse(sheet_name=sheet, index_col='date', parse_dates=True)
+            df_list.append(df_sheet)
+        df = pd.concat(df_list, axis=1)
+        
+        # **Drop Weekend Datapoints**
+        # Ensure the index is datetime
+        if not pd.api.types.is_datetime64_any_dtype(df.index):
+            df.index = pd.to_datetime(df.index)
+        # Filter out weekends (Saturday=5, Sunday=6)
+        df = df[~df.index.dayofweek.isin([5, 6])]
+        
+        return df
+    except Exception as e:
+        st.error(f"Error reading Excel file: {e}")
+        return None
+
+@st.cache_data
+def process_yields(df):
+    # Adjust yields for AU 3Y and 10Y futures if they exist
+    if 'AU 3Y Future' in df.columns:
+        df['AU 3Y Future'] = 100 - df['AU 3Y Future']
+    if 'AU 10Y Future' in df.columns:
+        df['AU 10Y Future'] = 100 - df['AU 10Y Future']
+    return df
+
+@st.cache_data
+def calculate_returns(df):
+    # Calculate daily yield changes (returns)
+    returns = df.diff().dropna()
+    # Correct the sign of returns to reflect price changes
+    # Since bond prices move inversely to yields, we multiply by -1
+    price_returns = returns * -1
+    return price_returns
+
+@st.cache_data
+def adjust_time_zones(price_returns, instrument_country):
+    # Adjust returns for time zone differences
+    non_lag_countries = ['JP', 'AU', 'SK', 'CH']
+    instrument_countries = pd.Series([instrument_country.get(instr, 'Other') for instr in price_returns.columns], index=price_returns.columns)
+
+    instruments_to_lag = instrument_countries[~instrument_countries.isin(non_lag_countries)].index.tolist()
+    instruments_not_to_lag = instrument_countries[instrument_countries.isin(non_lag_countries)].index.tolist()
+
+    adjusted_price_returns = price_returns.copy()
+
+    if instruments_to_lag:
+        adjusted_price_returns[instruments_to_lag] = adjusted_price_returns[instruments_to_lag].shift(-1)
+
+    # Drop rows with NaN values resulting from the shift
+    adjusted_price_returns = adjusted_price_returns.dropna()
+    return adjusted_price_returns
+
+@st.cache_data
+def calculate_volatilities(adjusted_price_returns, lookback_days):
+    # Use the selected lookback period for volatility calculations
+    price_returns_vol = adjusted_price_returns.tail(lookback_days)
+    # Calculate annualized volatilities in basis points
+    volatilities = price_returns_vol.std() * np.sqrt(252) * 100  # Annualized volatility in bps
+    return volatilities
+
+@st.cache_data
+def calculate_covariance_matrix(adjusted_price_returns, lookback_days):
+    # Use the selected lookback period for covariance calculations
+    price_returns_cov = adjusted_price_returns.tail(lookback_days)
+    # Calculate the covariance matrix (annualized) in bps^2
+    covariance_matrix = price_returns_cov.cov() * 252 * 10000  # Multiply by 100^2 to convert to bps^2
+    return covariance_matrix
+
 def main():
     # Set page configuration to use the full width
     st.set_page_config(page_title="Fixed Income Portfolio Risk Attribution", layout="wide")
@@ -65,6 +142,30 @@ def main():
             'DM'
         ]
     })
+
+    # Define the sensitivity rate column with user selection
+    st.sidebar.header("Sensitivity Rate Configuration")
+    excel_file = 'historical_data.xlsx'
+
+    # Load historical data to get available columns
+    if os.path.exists(excel_file):
+        raw_df = load_historical_data(excel_file)
+        if raw_df is not None:
+            available_columns = raw_df.columns.tolist()
+            if 'US 10Y Future' in available_columns:
+                default_index = available_columns.index('US 10Y Future')
+            else:
+                default_index = 0  # Default to the first column if 'US 10Y Future' is not present
+            sensitivity_rate = st.sidebar.selectbox(
+                'Select the rate instrument for sensitivity analysis:',
+                options=available_columns,
+                index=default_index
+            )
+        else:
+            sensitivity_rate = 'US 10Y Future'  # Default value if data loading failed
+    else:
+        st.sidebar.error(f"Excel file '{excel_file}' not found. Please ensure it is in the app directory.")
+        return
 
     # Create tickers_data mapping Ticker to Instrument Name
     tickers_data = OrderedDict(zip(instruments_data['Ticker'], instruments_data['Instrument Name']))
@@ -234,6 +335,7 @@ def main():
     gb_dm = GridOptionsBuilder.from_dataframe(default_positions_dm)
     gb_dm.configure_columns(['Outright', 'Curve', 'Spread'], editable=True, cellStyle=cell_style_jscode)
     gb_dm.configure_column('Instrument', editable=False)
+    gb_dm.configure_pagination(enabled=True, paginationPageSize=20)  # Enable pagination
     grid_options_dm = gb_dm.build()
     grid_response_dm = AgGrid(
         default_positions_dm,
@@ -251,6 +353,7 @@ def main():
     gb_em = GridOptionsBuilder.from_dataframe(default_positions_em)
     gb_em.configure_columns(['Outright', 'Curve', 'Spread'], editable=True, cellStyle=cell_style_jscode)
     gb_em.configure_column('Instrument', editable=False)
+    gb_em.configure_pagination(enabled=True, paginationPageSize=20)  # Enable pagination
     grid_options_em = gb_em.build()
     grid_response_em = AgGrid(
         default_positions_em,
@@ -292,82 +395,27 @@ def main():
         st.write('This may take a few moments.')
 
         # Step 4: Load Historical Data from the Excel File
-
-        # Ensure the Excel file exists
-        excel_file = 'historical_data.xlsx'
         if not os.path.exists(excel_file):
             st.error(f"Excel file '{excel_file}' not found. Please ensure it is in the app directory.")
             return
 
-        # Read the data from 'historical_data.xlsx'
-        try:
-            # Load Excel file
-            excel = pd.ExcelFile(excel_file)
-            # Find the sheet that contains 'US 10Y Future'
-            sheet_with_us_10y = None
-            for sheet in excel.sheet_names:
-                df_sheet = excel.parse(sheet_name=sheet)
-                # Clean column names by stripping spaces and making lowercase for matching
-                df_sheet.columns = df_sheet.columns.str.strip().str.lower()
-                if 'us 10y future' in df_sheet.columns:
-                    sheet_with_us_10y = sheet
-                    # Rename columns back to original for consistency
-                    df_sheet.columns = excel.parse(sheet_name=sheet).columns
-                    break
-            if sheet_with_us_10y is None:
-                st.warning("US 10Y Future data not available for sensitivity analysis.")
-                st.write("**Available Sheets:**")
-                st.write(excel.sheet_names)
-                return
-            # Read the sheet with 'US 10Y Future'
-            df = pd.read_excel(excel_file, sheet_name=sheet_with_us_10y, index_col='date', parse_dates=True)
-        except Exception as e:
-            st.error(f"Error reading Excel file: {e}")
+        # Load and process historical data
+        df = load_historical_data(excel_file)
+        if df is None:
+            return  # Error message already displayed
+
+        df = process_yields(df)
+        price_returns = calculate_returns(df)
+        adjusted_price_returns = adjust_time_zones(price_returns, instrument_country)
+
+        # Check if adjusted_price_returns is empty
+        if adjusted_price_returns.empty:
+            st.warning("No data available after adjusting for time zones.")
             return
 
-        # Check if 'US 10Y Future' exists (case-sensitive)
-        if 'US 10Y Future' not in df.columns:
-            st.warning("US 10Y Future data not available for sensitivity analysis.")
-            st.write("**Available Columns:**")
-            st.write(df.columns.tolist())
-            return
-
-        # Adjust yields for AU 3Y and 10Y futures
-        if 'AU 3Y Future' in df.columns:
-            df['AU 3Y Future'] = 100 - df['AU 3Y Future']
-        if 'AU 10Y Future' in df.columns:
-            df['AU 10Y Future'] = 100 - df['AU 10Y Future']
-
-        # Calculate daily yield changes (returns)
-        returns = df.diff().dropna()
-
-        # Correct the sign of returns to reflect price changes
-        # Since bond prices move inversely to yields, we multiply by -1
-        price_returns = returns * -1
-
-        # Adjust returns for time zone differences
-        non_lag_countries = ['JP', 'AU', 'SK', 'CH']
-        instrument_countries = pd.Series([instrument_country.get(instr, 'Other') for instr in price_returns.columns], index=price_returns.columns)
-
-        instruments_to_lag = instrument_countries[~instrument_countries.isin(non_lag_countries)].index.tolist()
-        instruments_not_to_lag = instrument_countries[instrument_countries.isin(non_lag_countries)].index.tolist()
-
-        adjusted_price_returns = price_returns.copy()
-
-        for instr in instruments_to_lag:
-            adjusted_price_returns[instr] = adjusted_price_returns[instr].shift(-1)
-
-        # Drop rows with NaN values resulting from the shift
-        adjusted_price_returns = adjusted_price_returns.dropna()
-
-        # Use the selected lookback period for volatility calculations
-        price_returns_vol = adjusted_price_returns.tail(volatility_lookback_days)
-
-        # Calculate annualized volatilities in basis points
-        volatilities = price_returns_vol.std() * np.sqrt(252) * 100  # Annualized volatility in bps
-
-        # Calculate the covariance matrix (annualized) in bps^2
-        covariance_matrix = price_returns_vol.cov() * 252 * 10000  # Multiply by 100^2 to convert to bps^2
+        # Calculate volatilities and covariance matrix
+        volatilities = calculate_volatilities(adjusted_price_returns, volatility_lookback_days)
+        covariance_matrix = calculate_covariance_matrix(adjusted_price_returns, volatility_lookback_days)
 
         # Step 5: Process User Input Positions
 
@@ -404,20 +452,51 @@ def main():
         # Create expanded positions vector
         expanded_positions_vector = expanded_positions_data.set_index(['Instrument', 'Position Type'])['Position']
 
+        # Ensure that the sensitivity rate is included even if the user has no position in it
+        if sensitivity_rate not in expanded_positions_vector.index.get_level_values('Instrument'):
+            # Add the sensitivity_rate with zero position
+            zero_position = pd.Series(
+                0.0, 
+                index=pd.MultiIndex.from_tuples([(sensitivity_rate, 'Outright')], names=['Instrument', 'Position Type'])
+            )
+            expanded_positions_vector = pd.concat([expanded_positions_vector, zero_position])
+
         # Create an empty DataFrame for the expanded covariance matrix
         expanded_index = expanded_positions_vector.index
         expanded_cov_matrix = pd.DataFrame(index=expanded_index, columns=expanded_index)
 
-        # Populate the expanded covariance matrix
-        for i in expanded_index:
-            for j in expanded_index:
-                instr_i = i[0]
-                instr_j = j[0]
-                try:
-                    var_i_j = covariance_matrix.loc[instr_i, instr_j]
-                except KeyError:
-                    var_i_j = 0  # If instrument not found in covariance_matrix
-                expanded_cov_matrix.loc[i, j] = var_i_j
+        # Populate the expanded covariance matrix (vectorized)
+        instruments = expanded_positions_vector.index.get_level_values('Instrument').unique()
+        
+        # Check if all instruments are present in the covariance matrix
+        missing_instruments = [instr for instr in instruments if instr not in covariance_matrix.index]
+        if missing_instruments:
+            st.warning(f"The following instruments are missing from the covariance matrix and will be excluded from calculations: {missing_instruments}")
+            # Remove missing instruments from positions_vector and expanded_cov_matrix
+            # Drop any positions corresponding to missing instruments
+            expanded_positions_vector = expanded_positions_vector.drop(
+                labels=[
+                    (instr, pos_type) 
+                    for instr in missing_instruments 
+                    for pos_type in ['Outright', 'Curve', 'Spread'] 
+                    if (instr, pos_type) in expanded_positions_vector.index
+                ], 
+                errors='ignore'
+            )
+            expanded_index = expanded_positions_vector.index
+            expanded_cov_matrix = pd.DataFrame(index=expanded_index, columns=expanded_index)
+            instruments = expanded_positions_vector.index.get_level_values('Instrument').unique()
+
+        # Re-extract covariance_submatrix with available instruments
+        covariance_submatrix = covariance_matrix.loc[instruments, instruments]
+
+        # Assign covariance values to the expanded covariance matrix
+        for pos1 in expanded_index:
+            for pos2 in expanded_index:
+                instr1 = pos1[0]
+                instr2 = pos2[0]
+                var_i_j = covariance_submatrix.loc[instr1, instr2]
+                expanded_cov_matrix.loc[pos1, pos2] = var_i_j
 
         expanded_cov_matrix = expanded_cov_matrix.astype(float)
 
@@ -452,6 +531,18 @@ def main():
 
         # Create a DataFrame for reporting
         risk_contributions = expanded_positions_data.copy()
+        
+        # Ensure 'Instrument' and 'Position Type' are set correctly
+        if not {'Instrument', 'Position Type'}.issubset(risk_contributions.columns):
+            st.error("Positions data is missing 'Instrument' or 'Position Type' columns.")
+            return
+
+        # **Ensure 'US 10Y Future' is included in risk_contributions only if it has a non-zero position**
+        # Since we've already appended 'US 10Y Future' with zero position, we will filter it out in the formatted DataFrame
+
+        # Merge to align with expanded_volatilities
+        risk_contributions = risk_contributions.set_index(['Instrument', 'Position Type']).reindex(expanded_positions_vector.index).reset_index()
+
         risk_contributions['Position Stand-alone Volatility'] = standalone_volatilities.values
         risk_contributions['Contribution to Volatility (bps)'] = contribution_to_volatility.values
         risk_contributions['Percent Contribution (%)'] = percent_contribution.values
@@ -471,6 +562,11 @@ def main():
              'Instrument Volatility per 1Y Duration (bps)', 'Contribution to Volatility (bps)', 'Percent Contribution (%)', 'Portfolio']
         ]
 
+        # **Exclude Rows with Zero or NaN Positions**
+        risk_contributions_formatted = risk_contributions_formatted[
+            risk_contributions_formatted['Position'].notna() & (risk_contributions_formatted['Position'] != 0)
+        ]
+
         # Add bar charts to 'Percent Contribution (%)' column
         styled_risk_contributions = risk_contributions_formatted.style.bar(
             subset=['Percent Contribution (%)'], color='#d65f5f'
@@ -487,7 +583,7 @@ def main():
         st.markdown(styled_risk_contributions.to_html(), unsafe_allow_html=True)
 
         # Compute risk contributions by Portfolio (DM and EM)
-        risk_contributions_by_portfolio = risk_contributions.groupby('Portfolio').agg({
+        risk_contributions_by_portfolio = risk_contributions_formatted.groupby('Portfolio').agg({
             'Contribution to Volatility (bps)': 'sum'
         })
         risk_contributions_by_portfolio['Percent Contribution (%)'] = (risk_contributions_by_portfolio['Contribution to Volatility (bps)'] / portfolio_volatility) * 100
@@ -501,7 +597,9 @@ def main():
         dm_positions_data = expanded_positions_data[expanded_positions_data['Portfolio'] == 'DM']
         if not dm_positions_data.empty:
             dm_positions_vector = dm_positions_data.set_index(['Instrument', 'Position Type'])['Position']
-            dm_variance = np.dot(dm_positions_vector.T, np.dot(expanded_cov_matrix.loc[dm_positions_vector.index, dm_positions_vector.index], dm_positions_vector))
+            # Extract relevant covariance submatrix
+            dm_cov_submatrix = expanded_cov_matrix.loc[dm_positions_vector.index, dm_positions_vector.index]
+            dm_variance = np.dot(dm_positions_vector.T, np.dot(dm_cov_submatrix, dm_positions_vector))
             dm_volatility = np.sqrt(dm_variance)
         else:
             dm_volatility = 0
@@ -510,7 +608,9 @@ def main():
         em_positions_data = expanded_positions_data[expanded_positions_data['Portfolio'] == 'EM']
         if not em_positions_data.empty:
             em_positions_vector = em_positions_data.set_index(['Instrument', 'Position Type'])['Position']
-            em_variance = np.dot(em_positions_vector.T, np.dot(expanded_cov_matrix.loc[em_positions_vector.index, em_positions_vector.index], em_positions_vector))
+            # Extract relevant covariance submatrix
+            em_cov_submatrix = expanded_cov_matrix.loc[em_positions_vector.index, em_positions_vector.index]
+            em_variance = np.dot(em_positions_vector.T, np.dot(em_cov_submatrix, em_positions_vector))
             em_volatility = np.sqrt(em_variance)
         else:
             em_volatility = 0
@@ -549,24 +649,24 @@ def main():
         st.write(f"**Daily VaR at 99% confidence:** {VaR_99_daily:.2f} bps")
         st.write(f"**Daily cVaR at 99% confidence:** {cVaR_99_daily:.2f} bps")
 
-        # Compute Portfolio Sensitivity to US 10Y Rates
+        # Compute Portfolio Sensitivity to Sensitivity Rate
 
-        # Use returns of US 10Y Future as independent variable
-        if 'US 10Y Future' in price_returns_var.columns:
-            us_10y_returns = price_returns_var['US 10Y Future'] * 100  # Convert to bps
+        # Use returns of sensitivity_rate as independent variable
+        if sensitivity_rate in price_returns_var.columns:
+            sensitivity_returns = price_returns_var[sensitivity_rate] * 100  # Convert to bps
 
-            # Align the portfolio returns and US 10Y returns
-            common_dates = portfolio_returns.index.intersection(us_10y_returns.index)
+            # Align the portfolio returns and sensitivity rate returns
+            common_dates = portfolio_returns.index.intersection(sensitivity_returns.index)
             portfolio_returns_aligned = portfolio_returns.loc[common_dates]
-            us_10y_returns_aligned = us_10y_returns.loc[common_dates]
+            sensitivity_returns_aligned = sensitivity_returns.loc[common_dates]
 
             # Check if there are overlapping dates
-            if portfolio_returns_aligned.empty or us_10y_returns_aligned.empty:
-                st.warning("Insufficient overlapping data between portfolio returns and US 10Y Future returns for sensitivity analysis.")
+            if portfolio_returns_aligned.empty or sensitivity_returns_aligned.empty:
+                st.warning("Insufficient overlapping data between portfolio returns and the selected sensitivity rate returns for sensitivity analysis.")
             else:
                 # Perform regression to find beta
-                covariance = np.cov(portfolio_returns_aligned, us_10y_returns_aligned)[0, 1]
-                variance = np.var(us_10y_returns_aligned)
+                covariance = np.cov(portfolio_returns_aligned, sensitivity_returns_aligned)[0, 1]
+                variance = np.var(sensitivity_returns_aligned)
                 beta = covariance / variance if variance != 0 else 0
 
                 # Determine sensitivity direction
@@ -584,24 +684,24 @@ def main():
                     yield_movement = 'no change'
                     pl_direction = 'no change'
 
-                # Sensitivity to a 1 bps move in US 10Y yields
+                # Sensitivity to a 1 bps move in sensitivity rate yields
                 sensitivity = beta * 1  # Sensitivity per 1 bps move
 
-                st.subheader('Portfolio Sensitivity to US 10Y Yields')
-                st.write(f"**Portfolio Beta to US 10Y Yields:** {beta:.4f} ({beta_direction} beta)")
-                st.write(f"The portfolio is expected to {pl_direction} when US 10Y yields are {yield_movement}.")
+                st.subheader(f'Portfolio Sensitivity to {sensitivity_rate} Yields')
+                st.write(f"**Portfolio Beta to {sensitivity_rate} Yields:** {beta:.4f} ({beta_direction} beta)")
+                st.write(f"The portfolio is expected to {pl_direction} when {sensitivity_rate} yields are {yield_movement}.")
 
-                # Expected P&L for a 1 bps move in US 10Y yields
+                # Expected P&L for a 1 bps move in sensitivity rate yields
                 if beta_direction == 'positive':
                     expected_pl = sensitivity
-                    st.write(f"**Expected P&L for a 1 bps fall in US 10Y yields:** Gain of {expected_pl:.4f} bps")
+                    st.write(f"**Expected P&L for a 1 bps fall in {sensitivity_rate} yields:** Gain of {expected_pl:.4f} bps")
                 elif beta_direction == 'negative':
                     expected_pl = sensitivity
-                    st.write(f"**Expected P&L for a 1 bps rise in US 10Y yields:** Gain of {expected_pl:.4f} bps")
+                    st.write(f"**Expected P&L for a 1 bps rise in {sensitivity_rate} yields:** Gain of {expected_pl:.4f} bps")
                 else:
-                    st.write("**Expected P&L for a 1 bps move in US 10Y yields:** No expected change")
+                    st.write(f"**Expected P&L for a 1 bps move in {sensitivity_rate} yields:** No expected change")
         else:
-            st.warning("US 10Y Future data not available for sensitivity analysis.")
+            st.warning(f"'{sensitivity_rate}' data not available for sensitivity analysis.")
             st.write("**Available Columns:**")
             st.write(price_returns_var.columns.tolist())
 
