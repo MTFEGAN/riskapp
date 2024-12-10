@@ -25,7 +25,6 @@ def load_historical_data(excel_file):
         st.error(f"Error reading Excel file: {e}")
         return pd.DataFrame()
 
-# Since we now have direct yield series for Aussie yields, no adjustments needed
 @st.cache_data(show_spinner=False)
 def adjust_time_zones(df, instrument_country):
     # Certain countries are considered "non-lag"
@@ -45,14 +44,13 @@ def adjust_time_zones(df, instrument_country):
 @st.cache_data(show_spinner=False)
 def to_weekly_data(df):
     # Resample to weekly frequency using Friday closes
-    # If Friday data is missing, picks the last available day that week
     weekly_df = df.resample('W-FRI').last().dropna(how='all')
     return weekly_df
 
 @st.cache_data(show_spinner=False)
 def calculate_weekly_changes_in_bps(weekly_df):
-    # Assuming yields are already in percentage points (0.01 = 1%)
-    # A change of 0.01 = 1bp, so multiply changes by 100 to convert to bps
+    # Assuming yields in percentage points, 0.01 = 1%, so 0.01 change = 1bp
+    # Multiply changes by 100 to convert to bps
     weekly_changes = weekly_df.diff().dropna() * 100
     return weekly_changes
 
@@ -105,39 +103,66 @@ def guess_country_from_instrument_name(name):
             return country_codes[code]
     return 'Other'
 
+# Update instrument_country as needed for all instruments
 instrument_country = {
-    'GACGB2 Index': 'AU',
-    'GACGB10 Index': 'AU',
-    # Add other instruments and mappings as needed
-    'US 2Y Future': 'US',
-    'US 5Y Future': 'US',
-    'US 10Y Future': 'US',
+    'GACGB2 Index': 'AU', 'GACGB10 Index': 'AU',
+    'TUAFWD Comdty': 'US', 'FVAFWD Comdty': 'US', 'TYAFWD Comdty': 'US', 'UXYAFWD Comdty': 'US', 'WNAFWD Comdty': 'US',
+    'DUAFWD Comdty': 'DE', 'OEAFWD Comdty': 'DE', 'RXAFWD Comdty': 'DE',
+    'GAFWD Comdty': 'UK', 'IKAFWD Comdty': 'IT', 'CNAFWD Comdty': 'CA', 'JBAFWD Comdty': 'JP',
+    'CCSWNI1 Curncy': 'CH', 'ADSW2 Curncy': 'AU', 'CDSO2 Curncy': 'CA', 'USSW2 Curncy': 'US',
+    'EUSA2 Curncy': 'DE', 'BPSWS2 BGN Curncy': 'UK', 'NDSWAP2 BGN Curncy': 'NZ', 'I39302Y Index': 'BR',
+    'MPSW2B BGN Curncy': 'MX', 'MPSWF2B Curncy': 'MX', 'SAFR1I2 BGN Curncy': 'SA', 'CKSW2 BGN Curncy': 'CZ',
+    'PZSW2 BGN Curncy': 'PO', 'KWSWNI2 BGN Curncy': 'SK', 'CCSWNI2 CMPN Curncy': 'CH',
+    'ADSW5 Curncy': 'AU', 'CDSO5 Curncy': 'CA', 'USSW5 Curncy': 'US', 'EUSA5 Curncy': 'DE',
+    'BPSWS5 BGN Curncy': 'UK', 'NDSWAP5 BGN Curncy': 'NZ', 'I39305Y Index': 'BR', 'MPSW5E Curncy': 'MX',
+    'MPSWF5E Curncy': 'MX', 'SASW5 Curncy': 'SA', 'CKSW5 Curncy': 'CZ', 'PZSW5 Curncy': 'PO',
+    'KWSWNI5 Curncy': 'SK', 'CCSWNI5 Curncy': 'CH', 'JYSO5 Curncy': 'JP', 'ADSW10 Curncy': 'AU',
+    'CDSO10 Curncy': 'CA', 'USSW10 Curncy': 'US', 'EUSA10 Curncy': 'DE', 'BPSWS10 BGN Curncy': 'UK',
+    'NDSWAP10 BGN Curncy': 'NZ', 'ADSW30 Curncy': 'AU', 'CDSW30 Curncy': 'CA', 'USSW30 Curncy': 'US',
+    'EUSA30 Curncy': 'DE', 'BPSWS30 BGN Curncy': 'UK', 'NDSWAP30 BGN Curncy': 'NZ', 'JYSO30 Curncy': 'JP',
+    'MPSW10J BGN Curncy': 'MX', 'MPSWF10J BGN Curncy': 'MX', 'SASW10 Curncy': 'SA', 'CKSW10 Curncy': 'CZ',
+    'PZSW10 Curncy': 'PO', 'KWSWNI10 Curncy': 'SK', 'CCSWNI10 Curncy': 'CH', 'BPSWIT10 Curncy': 'IT'
 }
 
 def main():
     st.title('📈 Fixed Income Portfolio Risk Attribution')
     st.write("App initialized successfully.")
 
-    # Full arrays with all instruments (example shown, adjust as needed)
+    # Full arrays with all instruments (as previously shown)
     instruments_data = pd.DataFrame({
         "Ticker": [
             "GACGB2 Index","GACGB10 Index","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty","UXYAFWD Comdty",
-            "WNAFWD Comdty","DUAFWD Comdty","OEAFWD Comdty","RXAFWD Comdty"
+            "WNAFWD Comdty","DUAFWD Comdty","OEAFWD Comdty","RXAFWD Comdty","GAFWD Comdty","IKAFWD Comdty",
+            "CNAFWD Comdty","JBAFWD Comdty","CCSWNI1 Curncy","ADSW2 Curncy","CDSO2 Curncy","USSW2 Curncy",
+            "EUSA2 Curncy","BPSWS2 BGN Curncy","NDSWAP2 BGN Curncy","I39302Y Index","MPSW2B BGN Curncy",
+            "MPSWF2B Curncy","SAFR1I2 BGN Curncy","CKSW2 BGN Curncy","PZSW2 BGN Curncy","KWSWNI2 BGN Curncy",
+            "CCSWNI2 CMPN Curncy","ADSW5 Curncy","CDSO5 Curncy","USSW5 Curncy","EUSA5 Curncy","BPSWS5 BGN Curncy",
+            "NDSWAP5 BGN Curncy","I39305Y Index","MPSW5E Curncy","MPSWF5E Curncy","SASW5 Curncy","CKSW5 Curncy",
+            "PZSW5 Curncy","KWSWNI5 Curncy","CCSWNI5 Curncy","JYSO5 Curncy","ADSW10 Curncy","CDSW10 Curncy",
+            "USSW10 Curncy","EUSA10 Curncy","BPSWS10 BGN Curncy","NDSWAP10 BGN Curncy","ADSW30 Curncy",
+            "CDSW30 Curncy","USSW30 Curncy","EUSA30 Curncy","BPSWS30 BGN Curncy","NDSWAP30 BGN Curncy",
+            "JYSO30 Curncy","MPSW10J BGN Curncy","MPSWF10J BGN Curncy","SASW10 Curncy","CKSW10 Curncy",
+            "PZSW10 Curncy","KWSWNI10 Curncy","CCSWNI10 Curncy","BPSWIT10 Curncy"
         ],
         "Instrument Name": [
-            "AU 3Y Future","AU 10Y Future","US 2Y Future","US 5Y Future","US 10Y Future",
-            "US 10Y Ultra Future","US 30Y Future","DE 2Y Future","DE 5Y Future","DE 10Y Future"
+            "AU 3Y Future","AU 10Y Future","US 2Y Future","US 5Y Future","US 10Y Future","US 10Y Ultra Future",
+            "US 30Y Future","DE 2Y Future","DE 5Y Future","DE 10Y Future","UK 10Y Future","IT 10Y Future",
+            "CA 10Y Future","JP 10Y Future","CH 1Y Swap","AU 2Y Swap","CA 2Y Swap","US 2Y Swap","DE 2Y Swap",
+            "UK 2Y Swap","NZ 2Y Swap","BR 2Y Swap","MX 2Y Swap","MX 2Y Swap OIS","SA 2Y Swap","CZ 2Y Swap",
+            "PO 2Y Swap","SK 2Y Swap","CH 2Y Swap","AU 5Y Swap","CA 5Y Swap","US 5Y Swap","DE 5Y Swap","UK 5Y Swap",
+            "NZ 5Y Swap","BR 5Y Swap","MX 5Y Swap","MX 5Y Swap OIS","SA 5Y Swap","CZ 5Y Swap","PO 5Y Swap",
+            "SK 5Y Swap","CH 5Y Swap","JP 5Y Swap","AU 10Y Swap","CA 10Y Swap","US 10Y Swap","DE 10Y Swap",
+            "UK 10Y Swap","NZ 10Y Swap","AU 30Y Swap","CA 30Y Swap","US 30Y Swap","DE 30Y Swap","UK 30Y Swap",
+            "NZ 30Y Swap","JP 30Y Swap","MX 10Y Swap","MX 10Y Swap OIS","SA 10Y Swap","CZ 10Y Swap","PO 10Y Swap",
+            "SK 10Y Swap","CH 10Y Swap","UK 10Y Swap Inf"
         ],
         "Portfolio": [
-            "DM","DM","DM","DM","DM","DM","DM","DM","DM","DM"
+            "DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","EM","DM","DM","DM","DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","EM","DM","DM","DM","DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","EM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","DM"
         ]
     })
 
-    # Update as needed: removing old references and ensuring these map correctly
-    # For illustration, we keep the same naming but now assume 'AU 3Y Future' and 'AU 10Y Future'
-    # refer to GACGB2 Index and GACGB10 Index yields directly.
     dm_instruments = instruments_data[instruments_data['Portfolio'] == 'DM']['Instrument Name'].tolist()
-    em_instruments = []  # Update as needed if you have EM instruments
+    em_instruments = instruments_data[instruments_data['Portfolio'] == 'EM']['Instrument Name'].tolist()
 
     default_positions_dm = pd.DataFrame({
         'Instrument': dm_instruments,
@@ -183,7 +208,7 @@ def main():
         st.subheader('📈 DM Portfolio Positions')
         gb_dm = GridOptionsBuilder.from_dataframe(default_positions_dm)
         gb_dm.configure_default_column(editable=True, resizable=True)
-        gb_dm.configure_column('Instrument', editable=False, width=600)
+        # Removed the manual width setting here
         dm_options = gb_dm.build()
         dm_response = AgGrid(
             default_positions_dm,
@@ -191,16 +216,16 @@ def main():
             height=600,
             width='100%',
             enable_enterprise_modules=False,
-            fit_columns_on_grid_load=False
+            fit_columns_on_grid_load=True  # Auto-fit columns on load
         )
         positions_data_dm = dm_response['data']
 
-        # EM table (if any)
+        # EM table
         if len(em_instruments) > 0:
             st.subheader('🌍 EM Portfolio Positions')
             gb_em = GridOptionsBuilder.from_dataframe(default_positions_em)
             gb_em.configure_default_column(editable=True, resizable=True)
-            gb_em.configure_column('Instrument', editable=False, width=600)
+            # No manual width setting, rely on auto-fit
             em_options = gb_em.build()
             em_response = AgGrid(
                 default_positions_em,
@@ -208,7 +233,7 @@ def main():
                 height=600,
                 width='100%',
                 enable_enterprise_modules=False,
-                fit_columns_on_grid_load=False
+                fit_columns_on_grid_load=True  # Auto-fit columns on load
             )
             positions_data_em = em_response['data']
         else:
@@ -352,7 +377,8 @@ def main():
 
                 risk_contributions_formatted = risk_contributions[
                     ['Instrument', 'Position Type', 'Position', 'Position Stand-alone Volatility',
-                     'Instrument Volatility per 1Y Duration (bps)', 'Contribution to Volatility (bps)', 'Percent Contribution (%)', 'Portfolio']
+                     'Instrument Volatility per 1Y Duration (bps)', 'Contribution to Volatility (bps)',
+                     'Percent Contribution (%)', 'Portfolio']
                 ]
                 risk_contributions_formatted = risk_contributions_formatted[
                     (risk_contributions_formatted['Position'].notna()) & (risk_contributions_formatted['Position'] != 0)
@@ -384,7 +410,7 @@ def main():
                 portfolio_beta = np.nan
                 instrument_betas = {}
                 if (sensitivity_rate in weekly_changes.columns) and (not weekly_changes.empty) and (not positions_per_instrument.empty):
-                    us10yr_returns = weekly_changes[sensitivity_rate]  # weekly returns in bps
+                    us10yr_returns = weekly_changes[sensitivity_rate]
                     portfolio_returns_for_beta = weekly_changes[positions_per_instrument.index].dot(positions_per_instrument)
                     portfolio_beta = compute_beta(portfolio_returns_for_beta, us10yr_returns)
 
@@ -466,7 +492,7 @@ def main():
                     st.subheader('📄 Detailed Risk Contributions by Instrument')
                     gb_risk = GridOptionsBuilder.from_dataframe(risk_contributions_formatted)
                     gb_risk.configure_default_column(editable=False, resizable=True)
-                    gb_risk.configure_column('Instrument', width=300)
+                    # No manual width setting, rely on auto-fit
                     risk_grid_options = gb_risk.build()
 
                     AgGrid(
@@ -475,7 +501,7 @@ def main():
                         height=400,
                         width='100%',
                         enable_enterprise_modules=False,
-                        fit_columns_on_grid_load=False
+                        fit_columns_on_grid_load=True  # Auto-fit columns on load
                     )
 
                     csv = risk_contributions_formatted.to_csv(index=False).encode('utf-8')
@@ -490,6 +516,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
