@@ -27,7 +27,7 @@ def load_historical_data(excel_file):
 
 @st.cache_data(show_spinner=False)
 def process_yields(df):
-    # Convert AU futures to yields
+    # Convert AU futures
     if 'AU 3Y Future' in df.columns:
         df['AU 3Y Future'] = 100 - df['AU 3Y Future']
     if 'AU 10Y Future' in df.columns:
@@ -58,7 +58,6 @@ def adjust_time_zones(price_returns, instrument_country):
     instruments_to_lag = instrument_countries[~instrument_countries.isin(non_lag_countries)].index.tolist()
     adjusted_price_returns = price_returns.copy()
     if instruments_to_lag:
-        # Shift returns by one day for instruments not in non_lag_countries
         adjusted_price_returns[instruments_to_lag] = adjusted_price_returns[instruments_to_lag].shift(-1)
     adjusted_price_returns = adjusted_price_returns.dropna()
     return adjusted_price_returns
@@ -67,6 +66,7 @@ def adjust_time_zones(price_returns, instrument_country):
 def calculate_volatilities(adjusted_price_returns, lookback_days):
     if adjusted_price_returns.empty:
         return pd.Series(dtype=float)
+    # Returns already in bps after conversion; just annualize by sqrt(252)
     price_returns_vol = adjusted_price_returns.tail(lookback_days)
     if price_returns_vol.empty:
         return pd.Series(dtype=float)
@@ -80,6 +80,7 @@ def calculate_covariance_matrix(adjusted_price_returns, lookback_days):
     price_returns_cov = adjusted_price_returns.tail(lookback_days)
     if price_returns_cov.empty:
         return pd.DataFrame()
+    # Annualize covariance
     covariance_matrix = price_returns_cov.cov() * 252
     return covariance_matrix
 
@@ -114,41 +115,17 @@ def main():
     st.title('📈 Fixed Income Portfolio Risk Attribution')
     st.write("App initialized successfully.")
 
+    # Make sure all these arrays have the exact same length!
+    # Update them to your full list, ensuring identical lengths.
     instruments_data = pd.DataFrame({
         "Ticker": [
-            "YM1 Comdty","XM1 Comdty","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty","UXYAFWD Comdty",
-            "WNAFWD Comdty","DUAFWD Comdty","OEAFWD Comdty","RXAFWD Comdty","GAFWD Comdty","IKAFWD Comdty",
-            "CNAFWD Comdty","JBAFWD Comdty","CCSWNI1 Curncy","ADSW2 Curncy","CDSO2 Curncy","USSW2 Curncy",
-            "EUSA2 Curncy","BPSWS2 BGN Curncy","NDSWAP2 BGN Curncy","I39302Y Index","MPSW2B BGN Curncy",
-            "MPSWF2B Curncy","SAFR1I2 BGN Curncy","CKSW2 BGN Curncy","PZSW2 BGN Curncy","KWSWNI2 BGN Curncy",
-            "CCSWNI2 CMPN Curncy","ADSW5 Curncy","CDSO5 Curncy","USSW5 Curncy","EUSA5 Curncy",
-            "BPSWS5 BGN Curncy","NDSWAP5 BGN Curncy","I39305Y Index","MPSW5E Curncy","MPSWF5E Curncy",
-            "SASW5 Curncy","CKSW5 Curncy","PZSW5 Curncy","KWSWNI5 BGN Curncy","CCSWNI5 Curncy","JYSO5 Curncy",
-            "ADSW10 Curncy","CDSW10 Curncy","USSW10 Curncy","EUSA10 Curncy","BPSWS10 BGN Curncy",
-            "NDSWAP10 BGN Curncy","ADSW30 Curncy","CDSW30 Curncy","USSW30 Curncy","EUSA30 Curncy",
-            "BPSWS30 BGN Curncy","NDSWAP30 BGN Curncy","JYSO30 Curncy","MPSW10J BGN Curncy",
-            "MPSWF10J BGN Curncy","SASW10 Curncy","CKSW10 Curncy","PZSW10 Curncy","KWSWNI10 Curncy",
-            "CCSWNI10 Curncy","BPSWIT10 Curncy"
+            "YM1 Comdty","XM1 Comdty","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty"
         ],
         "Instrument Name": [
-            "AU 3Y Future","AU 10Y Future","US 2Y Future","US 5Y Future","US 10Y Future","US 10Y Ultra Future",
-            "US 30Y Future","DE 2Y Future","DE 5Y Future","DE 10Y Future","UK 10Y Future","IT 10Y Future",
-            "CA 10Y Future","JP 10Y Future","CH 1Y Swap","AU 2Y Swap","CA 2Y Swap","US 2Y Swap",
-            "DE 2Y Swap","UK 2Y Swap","NZ 2Y Swap","BR 2Y Swap","MX 2Y Swap","MX 2Y Swap OIS",
-            "SA 2Y Swap","CZ 2Y Swap","PO 2Y Swap","SK 2Y Swap","CH 2Y Swap","AU 5Y Swap",
-            "CA 5Y Swap","US 5Y Swap","DE 5Y Swap","UK 5Y Swap","NZ 5Y Swap","BR 5Y Swap",
-            "MX 5Y Swap","MX 5Y Swap OIS","SA 5Y Swap","CZ 5Y Swap","PO 5Y Swap","SK 5Y Swap",
-            "CH 5Y Swap","JP 5Y Swap","AU 10Y Swap","CA 10Y Swap","US 10Y Swap","DE 10Y Swap",
-            "UK 10Y Swap","NZ 10Y Swap","AU 30Y Swap","CA 30Y Swap","US 30Y Swap","DE 30Y Swap",
-            "UK 30Y Swap","NZ 30Y Swap","JP 30Y Swap","MX 10Y Swap","MX 10Y Swap OIS","SA 10Y Swap",
-            "CZ 10Y Swap","PO 10Y Swap","SK 10Y Swap","CH 10Y Swap","UK 10Y Swap Inf"
+            "AU 3Y Future","AU 10Y Future","US 2Y Future","US 5Y Future","US 10Y Future"
         ],
         "Portfolio": [
-            "DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","EM","DM",
-            "DM","DM","DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","EM","DM","DM","DM",
-            "DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","EM","DM","DM","DM","DM","DM",
-            "DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","EM","EM","EM","EM","EM","EM",
-            "EM","DM"
+            "DM","DM","DM","DM","DM"
         ]
     })
 
@@ -181,10 +158,9 @@ def main():
         st.stop()
 
     available_columns = raw_df.columns.tolist()
+    default_index = 0
     if 'US 10Y Future' in available_columns:
         default_index = available_columns.index('US 10Y Future')
-    else:
-        default_index = 0
     sensitivity_rate = st.sidebar.selectbox(
         'Select sensitivity instrument:',
         options=available_columns,
@@ -202,9 +178,6 @@ def main():
         gb_dm = GridOptionsBuilder.from_dataframe(default_positions_dm)
         gb_dm.configure_default_column(editable=True, resizable=True)
         gb_dm.configure_column('Instrument', editable=False, width=600)
-        gb_dm.configure_column('Outright', width=200)
-        gb_dm.configure_column('Curve', width=200)
-        gb_dm.configure_column('Spread', width=200)
         dm_options = gb_dm.build()
         dm_response = AgGrid(
             default_positions_dm,
@@ -221,9 +194,6 @@ def main():
         gb_em = GridOptionsBuilder.from_dataframe(default_positions_em)
         gb_em.configure_default_column(editable=True, resizable=True)
         gb_em.configure_column('Instrument', editable=False, width=600)
-        gb_em.configure_column('Outright', width=200)
-        gb_em.configure_column('Curve', width=200)
-        gb_em.configure_column('Spread', width=200)
         em_options = gb_em.build()
         em_response = AgGrid(
             default_positions_em,
@@ -278,8 +248,7 @@ def main():
                     st.warning("No data after time zone adjustment.")
                     st.stop()
 
-                # Convert all yield differences to bps
-                # If original difference of 0.01 means 1bp, multiply by 100 to get difference in bps
+                # Convert yield differences to bps
                 adjusted_price_returns = adjusted_price_returns * 100
 
                 volatilities = calculate_volatilities(adjusted_price_returns, volatility_lookback_days)
@@ -379,9 +348,7 @@ def main():
                 def fmt_val(x):
                     return f"{x:.2f} bps" if (not np.isnan(x) and not np.isinf(x)) else "N/A"
 
-                # For VaR/cVaR calculations
                 VaR_95_daily, VaR_99_daily, cVaR_95_daily, cVaR_99_daily = (np.nan, np.nan, np.nan, np.nan)
-                # Using a var lookback returns slice:
                 price_returns_var = adjusted_price_returns.tail(var_lookback_days)
                 positions_per_instrument = expanded_positions_vector.groupby('Instrument').sum()
                 if not price_returns_var.empty:
@@ -397,12 +364,11 @@ def main():
                                 cVaR_95_daily = -portfolio_returns_var[portfolio_returns_var <= -VaR_95_daily].mean() if (portfolio_returns_var <= -VaR_95_daily).any() else np.nan
                                 cVaR_99_daily = -portfolio_returns_var[portfolio_returns_var <= -VaR_99_daily].mean() if (portfolio_returns_var <= -VaR_99_daily).any() else np.nan
 
-                # Compute Beta using full adjusted_price_returns in bps
+                # Compute Beta using adjusted_price_returns in bps
                 portfolio_beta = np.nan
                 instrument_betas = {}
                 if (sensitivity_rate in adjusted_price_returns.columns) and (not adjusted_price_returns.empty) and (not positions_per_instrument.empty):
-                    # US 10yr returns in bps
-                    us10yr_returns = adjusted_price_returns[sensitivity_rate]
+                    us10yr_returns = adjusted_price_returns[sensitivity_rate]  # in bps
                     portfolio_returns_for_beta = adjusted_price_returns[positions_per_instrument.index].dot(positions_per_instrument)
                     portfolio_beta = compute_beta(portfolio_returns_for_beta, us10yr_returns)
 
@@ -461,7 +427,6 @@ def main():
                 st.write(f"**Daily VaR at 99%:** {fmt_val(VaR_99_daily)}")
                 st.write(f"**Daily cVaR at 99%:** {fmt_val(cVaR_99_daily)}")
 
-                # Beta Section
                 st.subheader("📉 Beta to US 10yr Rates")
                 if not np.isnan(portfolio_beta):
                     st.write(f"**Portfolio Beta to {sensitivity_rate}:** {portfolio_beta:.4f}")
@@ -486,13 +451,6 @@ def main():
                     gb_risk = GridOptionsBuilder.from_dataframe(risk_contributions_formatted)
                     gb_risk.configure_default_column(editable=False, resizable=True)
                     gb_risk.configure_column('Instrument', width=300)
-                    gb_risk.configure_column('Position Type', width=150)
-                    gb_risk.configure_column('Position', width=100)
-                    gb_risk.configure_column('Position Stand-alone Volatility', width=150)
-                    gb_risk.configure_column('Instrument Volatility per 1Y Duration (bps)', width=250)
-                    gb_risk.configure_column('Contribution to Volatility (bps)', width=200)
-                    gb_risk.configure_column('Percent Contribution (%)', width=150)
-                    gb_risk.configure_column('Portfolio', width=100)
                     risk_grid_options = gb_risk.build()
 
                     AgGrid(
@@ -516,6 +474,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
