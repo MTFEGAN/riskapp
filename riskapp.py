@@ -3,31 +3,34 @@ import pandas as pd
 import numpy as np
 import os
 from collections import OrderedDict  # Ensure OrderedDict is imported
+
+# Import AgGrid for advanced data grid features
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
+# Caching the data loading and processing functions to improve performance
 @st.cache_data
-def load_historical_data(excel_file):
+def load_historical_data(excel_file, sensitivity_rate):
     try:
         # Load Excel file
         excel = pd.ExcelFile(excel_file)
-        # Find the sheet that contains 'US 10Y Future'
-        sheet_with_us_10y = None
+        # Find the sheet that contains the sensitivity rate column
+        sheet_with_sensitivity = None
         for sheet in excel.sheet_names:
             df_sheet = excel.parse(sheet_name=sheet)
             # Clean column names by stripping spaces and making lowercase for matching
             df_sheet.columns = df_sheet.columns.str.strip().str.lower()
-            if 'us 10y future' in df_sheet.columns:
-                sheet_with_us_10y = sheet
+            if sensitivity_rate.lower() in df_sheet.columns:
+                sheet_with_sensitivity = sheet
                 # Rename columns back to original for consistency
                 df_sheet.columns = excel.parse(sheet_name=sheet).columns
                 break
-        if sheet_with_us_10y is None:
-            st.warning("US 10Y Future data not available for sensitivity analysis.")
+        if sheet_with_sensitivity is None:
+            st.warning(f"'{sensitivity_rate}' data not available for sensitivity analysis.")
             st.write("**Available Sheets:**")
             st.write(excel.sheet_names)
             return None
-        # Read the sheet with 'US 10Y Future'
-        df = pd.read_excel(excel_file, sheet_name=sheet_with_us_10y, index_col='date', parse_dates=True)
+        # Read the sheet with the sensitivity rate
+        df = pd.read_excel(excel_file, sheet_name=sheet_with_sensitivity, index_col='date', parse_dates=True)
         return df
     except Exception as e:
         st.error(f"Error reading Excel file: {e}")
@@ -35,7 +38,7 @@ def load_historical_data(excel_file):
 
 @st.cache_data
 def process_yields(df):
-    # Adjust yields for AU 3Y and 10Y futures
+    # Adjust yields for AU 3Y and 10Y futures if they exist
     if 'AU 3Y Future' in df.columns:
         df['AU 3Y Future'] = 100 - df['AU 3Y Future']
     if 'AU 10Y Future' in df.columns:
@@ -143,6 +146,9 @@ def main():
             'DM'
         ]
     })
+
+    # Define the sensitivity rate column
+    sensitivity_rate = 'US 10Y Future'  # Change this if your column is named differently
 
     # Create tickers_data mapping Ticker to Instrument Name
     tickers_data = OrderedDict(zip(instruments_data['Ticker'], instruments_data['Instrument Name']))
@@ -378,7 +384,7 @@ def main():
             return
 
         # Load and process historical data
-        df = load_historical_data(excel_file)
+        df = load_historical_data(excel_file, sensitivity_rate)
         if df is None:
             return  # Error message already displayed
 
@@ -430,6 +436,12 @@ def main():
         # Create expanded positions vector
         expanded_positions_vector = expanded_positions_data.set_index(['Instrument', 'Position Type'])['Position']
 
+        # Ensure that the sensitivity rate is included even if the user has no position in it
+        if sensitivity_rate not in expanded_positions_vector.index.get_level_values('Instrument'):
+            # Add 'US 10Y Future' with zero position
+            zero_position = pd.Series(0.0, index=pd.MultiIndex.from_tuples([(sensitivity_rate, 'Outright')]))
+            expanded_positions_vector = expanded_positions_vector.append(zero_position)
+
         # Create an empty DataFrame for the expanded covariance matrix
         expanded_index = expanded_positions_vector.index
         expanded_cov_matrix = pd.DataFrame(index=expanded_index, columns=expanded_index)
@@ -480,6 +492,17 @@ def main():
 
         # Create a DataFrame for reporting
         risk_contributions = expanded_positions_data.copy()
+        # Ensure 'US 10Y Future' is included
+        risk_contributions = risk_contributions.append({
+            'Instrument': sensitivity_rate,
+            'Position Type': 'Outright',
+            'Position': 0.0,
+            'Portfolio': 'DM'  # Assign to DM or another appropriate portfolio if necessary
+        }, ignore_index=True)
+
+        # Merge to align with expanded_volatilities
+        risk_contributions = risk_contributions.set_index(['Instrument', 'Position Type']).reindex(expanded_positions_vector.index).reset_index()
+
         risk_contributions['Position Stand-alone Volatility'] = standalone_volatilities.values
         risk_contributions['Contribution to Volatility (bps)'] = contribution_to_volatility.values
         risk_contributions['Percent Contribution (%)'] = percent_contribution.values
@@ -583,9 +606,9 @@ def main():
 
         # Compute Portfolio Sensitivity to US 10Y Rates
 
-        # Use returns of US 10Y Future as independent variable
-        if 'US 10Y Future' in price_returns_var.columns:
-            us_10y_returns = price_returns_var['US 10Y Future'] * 100  # Convert to bps
+        # Use returns of sensitivity_rate as independent variable
+        if sensitivity_rate in price_returns_var.columns:
+            us_10y_returns = price_returns_var[sensitivity_rate] * 100  # Convert to bps
 
             # Align the portfolio returns and US 10Y returns
             common_dates = portfolio_returns.index.intersection(us_10y_returns.index)
@@ -633,7 +656,7 @@ def main():
                 else:
                     st.write("**Expected P&L for a 1 bps move in US 10Y yields:** No expected change")
         else:
-            st.warning("US 10Y Future data not available for sensitivity analysis.")
+            st.warning(f"'{sensitivity_rate}' data not available for sensitivity analysis.")
             st.write("**Available Columns:**")
             st.write(price_returns_var.columns.tolist())
 
