@@ -4,7 +4,7 @@ import numpy as np
 import os
 from collections import OrderedDict
 import plotly.express as px
-from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
+from st_aggrid import AgGrid, GridOptionsBuilder
 
 st.set_page_config(page_title="📈 Fixed Income Portfolio Risk Attribution", layout="wide")
 
@@ -19,6 +19,7 @@ def load_historical_data(excel_file):
         df = pd.concat(df_list, axis=1)
         if not pd.api.types.is_datetime64_any_dtype(df.index):
             df.index = pd.to_datetime(df.index)
+        # Remove weekends
         df = df[~df.index.dayofweek.isin([5, 6])]
         return df
     except Exception as e:
@@ -27,6 +28,7 @@ def load_historical_data(excel_file):
 
 @st.cache_data(show_spinner=False)
 def process_yields(df):
+    # Adjust yields for AU futures
     if 'AU 3Y Future' in df.columns:
         df['AU 3Y Future'] = 100 - df['AU 3Y Future']
     if 'AU 10Y Future' in df.columns:
@@ -95,6 +97,7 @@ def main():
     st.title('📈 Fixed Income Portfolio Risk Attribution')
     st.write("App initialized successfully.")
 
+    # Full instruments data
     instruments_data = pd.DataFrame({
         "Ticker": [
             "YM1 Comdty","XM1 Comdty","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty","UXYAFWD Comdty","WNAFWD Comdty","DUAFWD Comdty","OEAFWD Comdty","RXAFWD Comdty","GAFWD Comdty","IKAFWD Comdty","CNAFWD Comdty","JBAFWD Comdty","CCSWNI1 Curncy","ADSW2 Curncy","CDSO2 Curncy","USSW2 Curncy","EUSA2 Curncy","BPSWS2 BGN Curncy","NDSWAP2 BGN Curncy","I39302Y Index","MPSW2B BGN Curncy","MPSWF2B Curncy","SAFR1I2 BGN Curncy","CKSW2 BGN Curncy","PZSW2 BGN Curncy","KWSWNI2 BGN Curncy","CCSWNI2 CMPN Curncy","ADSW5 Curncy","CDSO5 Curncy","USSW5 Curncy","EUSA5 Curncy","BPSWS5 BGN Curncy","NDSWAP5 BGN Curncy","I39305Y Index","MPSW5E Curncy","MPSWF5E Curncy","SASW5 Curncy","CKSW5 Curncy","PZSW5 Curncy","KWSWNI5 Curncy","CCSWNI5 Curncy","JYSO5 Curncy","ADSW10 Curncy","CDSO10 Curncy","USSW10 Curncy","EUSA10 Curncy","BPSWS10 BGN Curncy","NDSWAP10 BGN Curncy","ADSW30 Curncy","CDSW30 Curncy","USSW30 Curncy","EUSA30 Curncy","BPSWS30 BGN Curncy","NDSWAP30 BGN Curncy","JYSO30 Curncy","MPSW10J BGN Curncy","MPSWF10J BGN Curncy","SASW10 Curncy","CKSW10 Curncy","PZSW10 Curncy","KWSWNI10 Curncy","CCSWNI10 Curncy","BPSWIT10 Curncy"
@@ -154,54 +157,46 @@ def main():
         'Spread': [0.0]*len(em_instruments),
     })
 
-    # No color cell formatting needed now; just show raw values
-    # We'll keep cell_style_jscode if you want conditional formatting, else remove:
-    cell_style_jscode = JsCode("""
-    function(params) {
-        return {'white-space': 'normal', 'font-size':'12px'};
-    };
-    """)
-
     tabs = st.tabs(["📊 Risk Attribution", "📂 Input Positions", "⚙️ Settings"])
 
+    # Input Positions Tab
     with tabs[1]:
         st.header("🔄 Input Positions")
-        st.write("All DM and EM instruments displayed with no pagination. Columns should show full text.")
+        st.write("All DM and EM instruments displayed. Columns are editable and resizable. Scroll horizontally if needed.")
 
         # DM table
         st.subheader('📈 DM Portfolio Positions')
         gb_dm = GridOptionsBuilder.from_dataframe(default_positions_dm)
-        gb_dm.configure_default_column(wrapText=True, autoHeight=True, resizable=True)
-        gb_dm.configure_column('Instrument', width=300)  # Increase width for full text
-        # Remove pagination to show all instruments at once
-        # Also ensure no truncation by enabling column resizing and wrapping
+        gb_dm.configure_default_column(editable=True, resizable=True)
+        gb_dm.configure_column('Instrument', editable=False, width=300)
         dm_options = gb_dm.build()
         dm_response = AgGrid(
             default_positions_dm,
             gridOptions=dm_options,
             height=600,
             width='100%',
-            allow_unsafe_jscode=True,
-            enable_enterprise_modules=False
+            enable_enterprise_modules=False,
+            fit_columns_on_grid_load=False
         )
         positions_data_dm = dm_response['data']
 
         # EM table
         st.subheader('🌍 EM Portfolio Positions')
         gb_em = GridOptionsBuilder.from_dataframe(default_positions_em)
-        gb_em.configure_default_column(wrapText=True, autoHeight=True, resizable=True)
-        gb_em.configure_column('Instrument', width=300)
+        gb_em.configure_default_column(editable=True, resizable=True)
+        gb_em.configure_column('Instrument', editable=False, width=300)
         em_options = gb_em.build()
         em_response = AgGrid(
             default_positions_em,
             gridOptions=em_options,
             height=600,
             width='100%',
-            allow_unsafe_jscode=True,
-            enable_enterprise_modules=False
+            enable_enterprise_modules=False,
+            fit_columns_on_grid_load=False
         )
         positions_data_em = em_response['data']
 
+    # Settings Tab
     with tabs[2]:
         st.header("⚙️ Configuration Settings")
         volatility_period_options = {
@@ -224,9 +219,7 @@ def main():
         var_period = st.selectbox('VaR lookback:', list(var_period_options.keys()), index=1)
         var_lookback_days = var_period_options[var_period]
 
-    # The rest of the logic remains unchanged from previous versions
-    # Just ensure no theme styling and no truncation issues.
-
+    # Risk Attribution Tab
     with tabs[0]:
         st.header("📊 Risk Attribution Results")
 
@@ -243,13 +236,7 @@ def main():
                     st.warning("No returns computed.")
                     st.stop()
 
-                adjusted_price_returns = adjust_time_zones(price_returns, {
-                    'AU 3Y Future': 'AU',
-                    'AU 10Y Future': 'AU',
-                    'US 2Y Future': 'US',
-                    'US 5Y Future': 'US',
-                    'US 10Y Future': 'US',
-                })
+                adjusted_price_returns = adjust_time_zones(price_returns, instrument_country)
                 if adjusted_price_returns.empty:
                     st.warning("No data after time zone adjustment.")
                     st.stop()
@@ -263,6 +250,7 @@ def main():
                 positions_data_em['Portfolio'] = 'EM'
                 positions_data = pd.concat([positions_data_dm, positions_data_em], ignore_index=True)
 
+                # Expand positions
                 positions_list = []
                 for _, row in positions_data.iterrows():
                     instrument = row['Instrument']
@@ -279,11 +267,12 @@ def main():
 
                 expanded_positions_data = pd.DataFrame(positions_list)
                 if expanded_positions_data.empty:
-                    st.warning("No active positions. Enter positions above.")
+                    st.warning("No active positions entered. Please enter positions and try again.")
                     st.stop()
 
                 expanded_positions_vector = expanded_positions_data.set_index(['Instrument', 'Position Type'])['Position']
 
+                # Ensure sensitivity rate included
                 if sensitivity_rate not in expanded_positions_vector.index.get_level_values('Instrument'):
                     zero_position = pd.Series(
                         0.0,
@@ -292,7 +281,7 @@ def main():
                     expanded_positions_vector = pd.concat([expanded_positions_vector, zero_position])
 
                 if covariance_matrix.empty:
-                    st.warning("Covariance matrix empty.")
+                    st.warning("Covariance matrix is empty. No overlapping instruments.")
                     st.stop()
 
                 instruments = expanded_positions_vector.index.get_level_values('Instrument').unique()
@@ -450,7 +439,7 @@ def main():
                 if not risk_contributions_formatted.empty:
                     st.subheader('📄 Detailed Risk Contributions by Instrument')
                     gb_risk = GridOptionsBuilder.from_dataframe(risk_contributions_formatted)
-                    gb_risk.configure_default_column(wrapText=True, autoHeight=True, resizable=True)
+                    gb_risk.configure_default_column(editable=False, resizable=True)
                     gb_risk.configure_column('Instrument', width=300)
                     risk_grid_options = gb_risk.build()
 
@@ -459,8 +448,8 @@ def main():
                         gridOptions=risk_grid_options,
                         height=400,
                         width='100%',
-                        allow_unsafe_jscode=True,
-                        enable_enterprise_modules=False
+                        enable_enterprise_modules=False,
+                        fit_columns_on_grid_load=False
                     )
 
                     csv = risk_contributions_formatted.to_csv(index=False).encode('utf-8')
@@ -475,6 +464,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
