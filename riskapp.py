@@ -6,10 +6,10 @@ from collections import OrderedDict
 import plotly.express as px
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
-# Must be the first Streamlit command:
+# Set page config first
 st.set_page_config(page_title="📈 Fixed Income Portfolio Risk Attribution", layout="wide")
 
-# Apply dark theme via CSS after set_page_config
+# Apply dark theme via CSS
 st.markdown("""
 <style>
 body {
@@ -42,7 +42,6 @@ def load_historical_data(excel_file):
         df = pd.concat(df_list, axis=1)
         if not pd.api.types.is_datetime64_any_dtype(df.index):
             df.index = pd.to_datetime(df.index)
-        # Drop weekends
         df = df[~df.index.dayofweek.isin([5, 6])]
         return df
     except Exception as e:
@@ -123,17 +122,27 @@ def main():
     st.title('📈 Fixed Income Portfolio Risk Attribution')
     st.write("App initialized successfully.")
 
+    # Full instruments_data with all instruments
     instruments_data = pd.DataFrame({
-        'Ticker': [
-            'YM1 Comdty', 'XM1 Comdty', 'TUAFWD Comdty', 'FVAFWD Comdty', 'TYAFWD Comdty'
+        "Ticker": [
+            "YM1 Comdty","XM1 Comdty","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty","UXYAFWD Comdty","WNAFWD Comdty","DUAFWD Comdty","OEAFWD Comdty","RXAFWD Comdty","GAFWD Comdty","IKAFWD Comdty","CNAFWD Comdty","JBAFWD Comdty","CCSWNI1 Curncy","ADSW2 Curncy","CDSO2 Curncy","USSW2 Curncy","EUSA2 Curncy","BPSWS2 BGN Curncy","NDSWAP2 BGN Curncy","I39302Y Index","MPSW2B BGN Curncy","MPSWF2B Curncy","SAFR1I2 BGN Curncy","CKSW2 BGN Curncy","PZSW2 BGN Curncy","KWSWNI2 BGN Curncy","CCSWNI2 CMPN Curncy","ADSW5 Curncy","CDSO5 Curncy","USSW5 Curncy","EUSA5 Curncy","BPSWS5 BGN Curncy","NDSWAP5 BGN Curncy","I39305Y Index","MPSW5E Curncy","MPSWF5E Curncy","SASW5 Curncy","CKSW5 Curncy","PZSW5 Curncy","KWSWNI5 Curncy","CCSWNI5 Curncy","JYSO5 Curncy","ADSW10 Curncy","CDSO10 Curncy","USSW10 Curncy","EUSA10 Curncy","BPSWS10 BGN Curncy","NDSWAP10 BGN Curncy","ADSW30 Curncy","CDSW30 Curncy","USSW30 Curncy","EUSA30 Curncy","BPSWS30 BGN Curncy","NDSWAP30 BGN Curncy","JYSO30 Curncy","MPSW10J BGN Curncy","MPSWF10J BGN Curncy","SASW10 Curncy","CKSW10 Curncy","PZSW10 Curncy","KWSWNI10 Curncy","CCSWNI10 Curncy","BPSWIT10 Curncy"
         ],
-        'Instrument Name': [
-            'AU 3Y Future', 'AU 10Y Future', 'US 2Y Future', 'US 5Y Future', 'US 10Y Future'
+        "Instrument Name": [
+            "AU 3Y Future","AU 10Y Future","US 2Y Future","US 5Y Future","US 10Y Future","US 10Y Ultra Future","US 30Y Future","DE 2Y Future","DE 5Y Future","DE 10Y Future","UK 10Y Future","IT 10Y Future","CA 10Y Future","JP 10Y Future","CH 1Y Swap","AU 2Y Swap","CA 2Y Swap","US 2Y Swap","DE 2Y Swap","UK 2Y Swap","NZ 2Y Swap","BR 2Y Swap","MX 2Y Swap","MX 2Y Swap OIS","SA 2Y Swap","CZ 2Y Swap","PO 2Y Swap","SK 2Y Swap","CH 2Y Swap","AU 5Y Swap","CA 5Y Swap","US 5Y Swap","DE 5Y Swap","UK 5Y Swap","NZ 5Y Swap","BR 5Y Swap","MX 5Y Swap","MX 5Y Swap OIS","SA 5Y Swap","CZ 5Y Swap","PO 5Y Swap","SK 5Y Swap","CH 5Y Swap","JP 5Y Swap","AU 10Y Swap","CA 10Y Swap","US 10Y Swap","DE 10Y Swap","UK 10Y Swap","NZ 10Y Swap","AU 30Y Swap","CA 30Y Swap","US 30Y Swap","DE 30Y Swap","UK 30Y Swap","NZ 30Y Swap","JP 30Y Swap","MX 10Y Swap","MX 10Y Swap OIS","SA 10Y Swap","CZ 10Y Swap","PO 10Y Swap","SK 10Y Swap","CH 10Y Swap","UK 10Y Swap Inf"
         ],
-        'Portfolio': [
-            'DM', 'DM', 'DM', 'DM', 'DM'
+        "Portfolio": [
+            "DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","EM","DM","DM","DM","DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","EM","DM","DM","DM","DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","EM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","DM"
         ]
     })
+
+    instrument_country = {
+        'AU 3Y Future': 'AU',
+        'AU 10Y Future': 'AU',
+        'US 2Y Future': 'US',
+        'US 5Y Future': 'US',
+        'US 10Y Future': 'US',
+        # Add others as needed, default 'Other' if not mapped
+    }
 
     st.sidebar.header("🔍 Sensitivity Rate Configuration")
     excel_file = 'historical_data.xlsx'
@@ -157,14 +166,7 @@ def main():
         index=default_index
     )
 
-    instrument_country = {
-        'AU 3Y Future': 'AU',
-        'AU 10Y Future': 'AU',
-        'US 2Y Future': 'US',
-        'US 5Y Future': 'US',
-        'US 10Y Future': 'US'
-    }
-
+    # Separate DM and EM instruments
     dm_instruments = instruments_data[instruments_data['Portfolio'] == 'DM']['Instrument Name'].tolist()
     em_instruments = instruments_data[instruments_data['Portfolio'] == 'EM']['Instrument Name'].tolist()
 
@@ -202,39 +204,41 @@ def main():
 
     with tabs[1]:
         st.header("🔄 Input Positions")
-        st.write("Enter DM and EM positions below. All instruments visible.")
+        st.write("All DM and EM instruments are displayed with no pagination. Scroll down the page to see all.")
 
+        # DM table
         st.subheader('📈 DM Portfolio Positions')
         gb_dm = GridOptionsBuilder.from_dataframe(default_positions_dm)
         gb_dm.configure_default_column(editable=True, groupable=True)
         gb_dm.configure_columns(['Outright', 'Curve', 'Spread'], editable=True, cellStyle=cell_style_jscode)
         gb_dm.configure_column('Instrument', editable=False)
-        grid_options_dm = gb_dm.build()
-        grid_response_dm = AgGrid(
+        dm_options = gb_dm.build()
+        AgGrid(
             default_positions_dm,
-            gridOptions=grid_options_dm,
-            height=300,
+            gridOptions=dm_options,
+            height=600,  # Increase height to show more instruments
             width='100%',
             allow_unsafe_jscode=True,
             enable_enterprise_modules=False
         )
-        positions_data_dm = grid_response_dm['data']
 
+        # EM table below DM table
         st.subheader('🌍 EM Portfolio Positions')
         gb_em = GridOptionsBuilder.from_dataframe(default_positions_em)
         gb_em.configure_default_column(editable=True, groupable=True)
         gb_em.configure_columns(['Outright', 'Curve', 'Spread'], editable=True, cellStyle=cell_style_jscode)
         gb_em.configure_column('Instrument', editable=False)
-        grid_options_em = gb_em.build()
-        grid_response_em = AgGrid(
+        em_options = gb_em.build()
+        em_response = AgGrid(
             default_positions_em,
-            gridOptions=grid_options_em,
-            height=300,
+            gridOptions=em_options,
+            height=600,  # Increase height to show more instruments
             width='100%',
             allow_unsafe_jscode=True,
             enable_enterprise_modules=False
         )
-        positions_data_em = grid_response_em['data']
+        positions_data_dm = default_positions_dm
+        positions_data_em = em_response['data']
 
     with tabs[2]:
         st.header("⚙️ Configuration Settings")
@@ -261,28 +265,29 @@ def main():
     with tabs[0]:
         st.header("📊 Risk Attribution Results")
 
+        # Run computations when button is clicked
         if st.button('🚀 Run Risk Attribution'):
             with st.spinner('Calculating risk attribution...'):
                 df = load_historical_data(excel_file)
                 if df.empty:
-                    st.error("No data loaded. Check Excel.")
+                    st.error("No data loaded. Check Excel file.")
                     st.stop()
 
                 df = process_yields(df)
                 price_returns = calculate_returns(df)
                 if price_returns.empty:
-                    st.warning("No returns. Check data.")
+                    st.warning("No returns computed.")
                     st.stop()
 
                 adjusted_price_returns = adjust_time_zones(price_returns, instrument_country)
                 if adjusted_price_returns.empty:
-                    st.warning("No data after TZ adjustment.")
+                    st.warning("No data after time zone adjustment.")
                     st.stop()
 
                 volatilities = calculate_volatilities(adjusted_price_returns, volatility_lookback_days)
                 covariance_matrix = calculate_covariance_matrix(adjusted_price_returns, var_lookback_days)
 
-                positions_data_dm = pd.DataFrame(positions_data_dm).astype({'Outright': float, 'Curve': float, 'Spread': float})
+                positions_data_dm = positions_data_dm.astype({'Outright': float, 'Curve': float, 'Spread': float})
                 positions_data_em = pd.DataFrame(positions_data_em).astype({'Outright': float, 'Curve': float, 'Spread': float})
                 positions_data_dm['Portfolio'] = 'DM'
                 positions_data_em['Portfolio'] = 'EM'
@@ -305,10 +310,12 @@ def main():
 
                 expanded_positions_data = pd.DataFrame(positions_list)
                 if expanded_positions_data.empty:
-                    st.warning("No active positions. Enter positions.")
+                    st.warning("No active positions. Enter positions above.")
                     st.stop()
 
                 expanded_positions_vector = expanded_positions_data.set_index(['Instrument', 'Position Type'])['Position']
+
+                # Ensure sensitivity_rate included
                 if sensitivity_rate not in expanded_positions_vector.index.get_level_values('Instrument'):
                     zero_position = pd.Series(
                         0.0,
@@ -378,48 +385,43 @@ def main():
                     risk_contributions_formatted['Position'].notna() & (risk_contributions_formatted['Position'] != 0)
                 ]
 
-                # VaR and cVaR
                 price_returns_var = adjusted_price_returns.tail(var_lookback_days)
-                if price_returns_var.empty:
-                    VaR_95_daily, VaR_99_daily, cVaR_95_daily, cVaR_99_daily = (np.nan, np.nan, np.nan, np.nan)
-                else:
+                def fmt_val(x):
+                    return f"{x:.2f} bps" if not np.isnan(x) else "N/A"
+
+                if not price_returns_var.empty:
                     positions_per_instrument = expanded_positions_vector.groupby('Instrument').sum()
                     available_instruments_var = positions_per_instrument.index.intersection(price_returns_var.columns)
-                    if available_instruments_var.empty:
-                        VaR_95_daily, VaR_99_daily, cVaR_95_daily, cVaR_99_daily = (np.nan, np.nan, np.nan, np.nan)
-                    else:
+                    if not available_instruments_var.empty:
                         positions_per_instrument = positions_per_instrument.loc[available_instruments_var]
                         price_returns_var = price_returns_var[available_instruments_var]
-                        if price_returns_var.empty:
-                            VaR_95_daily, VaR_99_daily, cVaR_95_daily, cVaR_99_daily = (np.nan, np.nan, np.nan, np.nan)
-                        else:
+                        if not price_returns_var.empty:
                             portfolio_returns = price_returns_var.dot(positions_per_instrument) * 100
-                            if portfolio_returns.empty:
-                                VaR_95_daily, VaR_99_daily, cVaR_95_daily, cVaR_99_daily = (np.nan, np.nan, np.nan, np.nan)
-                            else:
+                            if not portfolio_returns.empty:
                                 VaR_95_daily = -np.percentile(portfolio_returns, 5)
                                 VaR_99_daily = -np.percentile(portfolio_returns, 1)
                                 cVaR_95_daily = -portfolio_returns[portfolio_returns <= -VaR_95_daily].mean() if (portfolio_returns <= -VaR_95_daily).any() else np.nan
                                 cVaR_99_daily = -portfolio_returns[portfolio_returns <= -VaR_99_daily].mean() if (portfolio_returns <= -VaR_99_daily).any() else np.nan
+                            else:
+                                VaR_95_daily, VaR_99_daily, cVaR_95_daily, cVaR_99_daily = (np.nan, np.nan, np.nan, np.nan)
+                        else:
+                            VaR_95_daily, VaR_99_daily, cVaR_95_daily, cVaR_99_daily = (np.nan, np.nan, np.nan, np.nan)
+                    else:
+                        VaR_95_daily, VaR_99_daily, cVaR_95_daily, cVaR_99_daily = (np.nan, np.nan, np.nan, np.nan)
+                else:
+                    VaR_95_daily, VaR_99_daily, cVaR_95_daily, cVaR_99_daily = (np.nan, np.nan, np.nan, np.nan)
 
-                def fmt_val(x):
-                    return f"{x:.2f} bps" if not np.isnan(x) else "N/A"
-
-                # Compute Beta for portfolio and each instrument
+                # Compute portfolio and instrument betas
                 portfolio_beta = np.nan
                 instrument_betas = {}
-                if sensitivity_rate in price_returns_var.columns:
-                    # Portfolio returns for beta
-                    if not positions_per_instrument.empty:
-                        portfolio_returns_for_beta = price_returns_var.dot(positions_per_instrument) * 100
-                        us10yr_returns = price_returns_var[sensitivity_rate] * 100
-                        portfolio_beta = compute_beta(portfolio_returns_for_beta, us10yr_returns)
-                        # Instrument betas
-                        instruments_for_beta = positions_per_instrument.index
-                        for instr in instruments_for_beta:
-                            instr_return = price_returns_var[instr]*positions_per_instrument[instr]*100
-                            instr_beta = compute_beta(instr_return, us10yr_returns)
-                            instrument_betas[instr] = instr_beta
+                if sensitivity_rate in price_returns_var.columns and not positions_per_instrument.empty and not price_returns_var.empty:
+                    portfolio_returns_for_beta = price_returns_var.dot(positions_per_instrument) * 100
+                    us10yr_returns = price_returns_var[sensitivity_rate] * 100
+                    portfolio_beta = compute_beta(portfolio_returns_for_beta, us10yr_returns)
+                    for instr in positions_per_instrument.index:
+                        instr_return = price_returns_var[instr]*positions_per_instrument[instr]*100
+                        instr_beta = compute_beta(instr_return, us10yr_returns)
+                        instrument_betas[instr] = instr_beta
 
                 # Risk contributions chart
                 if not risk_contributions_formatted.empty:
@@ -455,7 +457,7 @@ def main():
                 else:
                     st.warning("No risk contributions to display.")
 
-                # Show metrics
+                # Display metrics
                 metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
                 metrics_col1.metric(label="📊 Total Portfolio Volatility", value=fmt_val(portfolio_volatility))
                 metrics_col2.metric(label="📉 Daily VaR (95%)", value=fmt_val(VaR_95_daily))
@@ -468,7 +470,7 @@ def main():
                 st.write(f"**Daily VaR at 99%:** {fmt_val(VaR_99_daily)}")
                 st.write(f"**Daily cVaR at 99%:** {fmt_val(cVaR_99_daily)}")
 
-                # Beta info (no regression chart)
+                # Beta to US 10yr (no regression chart)
                 st.subheader("📉 Beta to US 10yr Rates")
                 if not np.isnan(portfolio_beta):
                     st.write(f"**Portfolio Beta to {sensitivity_rate}:** {portfolio_beta:.4f}")
@@ -480,7 +482,7 @@ def main():
                 else:
                     st.write(f"No beta computed. Check {sensitivity_rate} data and positions.")
 
-                # Detailed risk contributions table
+                # Detailed contributions
                 if not risk_contributions_formatted.empty:
                     st.subheader('📄 Detailed Risk Contributions by Instrument')
                     gb_risk = GridOptionsBuilder.from_dataframe(risk_contributions_formatted)
@@ -508,6 +510,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
