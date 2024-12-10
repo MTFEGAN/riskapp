@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
-from collections import OrderedDict
 import os
 
 # Import AgGrid for advanced data grid features
@@ -301,7 +299,37 @@ def main():
             return
 
         # Read the data from 'historical_data.xlsx'
-        df = pd.read_excel(excel_file, index_col='date', parse_dates=True)
+        try:
+            # Load Excel file
+            excel = pd.ExcelFile(excel_file)
+            # Find the sheet that contains 'US 10Y Future'
+            sheet_with_us_10y = None
+            for sheet in excel.sheet_names:
+                df_sheet = excel.parse(sheet_name=sheet)
+                # Clean column names by stripping spaces and making lowercase for matching
+                df_sheet.columns = df_sheet.columns.str.strip().str.lower()
+                if 'us 10y future' in df_sheet.columns:
+                    sheet_with_us_10y = sheet
+                    # Rename columns back to original for consistency
+                    df_sheet.columns = excel.parse(sheet_name=sheet).columns
+                    break
+            if sheet_with_us_10y is None:
+                st.warning("US 10Y Future data not available for sensitivity analysis.")
+                st.write("**Available Sheets:**")
+                st.write(excel.sheet_names)
+                return
+            # Read the sheet with 'US 10Y Future'
+            df = pd.read_excel(excel_file, sheet_name=sheet_with_us_10y, index_col='date', parse_dates=True)
+        except Exception as e:
+            st.error(f"Error reading Excel file: {e}")
+            return
+
+        # Check if 'US 10Y Future' exists (case-sensitive)
+        if 'US 10Y Future' not in df.columns:
+            st.warning("US 10Y Future data not available for sensitivity analysis.")
+            st.write("**Available Columns:**")
+            st.write(df.columns.tolist())
+            return
 
         # Adjust yields for AU 3Y and 10Y futures
         if 'AU 3Y Future' in df.columns:
