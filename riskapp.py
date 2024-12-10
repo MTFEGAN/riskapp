@@ -27,7 +27,7 @@ def load_historical_data(excel_file):
 
 @st.cache_data(show_spinner=False)
 def process_yields(df):
-    # Adjust yields for AU futures if present
+    # Convert AU futures
     if 'AU 3Y Future' in df.columns:
         df['AU 3Y Future'] = 100 - df['AU 3Y Future']
     if 'AU 10Y Future' in df.columns:
@@ -42,7 +42,6 @@ def calculate_returns(df):
     price_returns = returns * -1
     return price_returns
 
-# Mapping for time zone adjustment
 instrument_country = {
     'AU 3Y Future': 'AU',
     'AU 10Y Future': 'AU',
@@ -59,6 +58,7 @@ def adjust_time_zones(price_returns, instrument_country):
     instruments_to_lag = instrument_countries[~instrument_countries.isin(non_lag_countries)].index.tolist()
     adjusted_price_returns = price_returns.copy()
     if instruments_to_lag:
+        # Shift returns by one day for instruments not in non_lag_countries
         adjusted_price_returns[instruments_to_lag] = adjusted_price_returns[instruments_to_lag].shift(-1)
     adjusted_price_returns = adjusted_price_returns.dropna()
     return adjusted_price_returns
@@ -115,7 +115,7 @@ def main():
 
     instruments_data = pd.DataFrame({
         "Ticker": [
-            "YM1 Comdty","XM1 Comdty","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty","UXYAFWD Comdty","WNAFWD Comdty","DUAFWD Comdty","OEAFWD Comdty","RXAFWD Comdty","GAFWD Comdty","IKAFWD Comdty","CNAFWD Comdty","JBAFWD Comdty","CCSWNI1 Curncy","ADSW2 Curncy","CDSO2 Curncy","USSW2 Curncy","EUSA2 Curncy","BPSWS2 BGN Curncy","NDSWAP2 BGN Curncy","I39302Y Index","MPSW2B BGN Curncy","MPSWF2B Curncy","SAFR1I2 BGN Curncy","CKSW2 BGN Curncy","PZSW2 BGN Curncy","KWSWNI2 BGN Curncy","CCSWNI2 CMPN Curncy","ADSW5 Curncy","CDSO5 Curncy","USSW5 Curncy","EUSA5 Curncy","BPSWS5 BGN Curncy","NDSWAP5 BGN Curncy","I39305Y Index","MPSW5E Curncy","MPSWF5E Curncy","SASW5 Curncy","CKSW5 Curncy","PZSW5 Curncy","KWSWNI5 Curncy","CCSWNI5 Curncy","JYSO5 Curncy","ADSW10 Curncy","CDSW10 Curncy","USSW10 Curncy","EUSA10 Curncy","BPSWS10 BGN Curncy","NDSWAP10 BGN Curncy","ADSW30 Curncy","CDSW30 Curncy","USSW30 Curncy","EUSA30 Curncy","BPSWS30 BGN Curncy","NDSWAP30 BGN Curncy","JYSO30 Curncy","MPSW10J BGN Curncy","MPSWF10J BGN Curncy","SASW10 Curncy","CKSW10 Curncy","PZSW10 Curncy","KWSWNI10 Curncy","CCSWNI10 Curncy","BPSWIT10 Curncy"
+            "YM1 Comdty","XM1 Comdty","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty","UXYAFWD Comdty","WNAFWD Comdty","DUAFWD Comdty","OEAFWD Comdty","RXAFWD Comdty","GAFWD Comdty","IKAFWD Comdty","CNAFWD Comdty","JBAFWD Comdty","CCSWNI1 Curncy","ADSW2 Curncy","CDSO2 Curncy","USSW2 Curncy","EUSA2 Curncy","BPSWS2 BGN Curncy","NDSWAP2 BGN Curncy","I39302Y Index","MPSW2B BGN Curncy","MPSWF2B Curncy","SAFR1I2 BGN Curncy","CKSW2 BGN Curncy","PZSW2 BGN Curncy","KWSWNI2 BGN Curncy","CCSWNI2 CMPN Curncy","ADSW5 Curncy","CDSO5 Curncy","USSW5 Curncy","EUSA5 Curncy","BPSWS5 BGN Curncy","NDSWAP5 BGN Curncy","I39305Y Index","MPSW5E Curncy","MPSWF5E Curncy","SASW5 Curncy","CKSW5 Curncy","PZSW5 Curncy","KWSWNI5 BGN Curncy","CCSWNI5 Curncy","JYSO5 Curncy","ADSW10 Curncy","CDSW10 Curncy","USSW10 Curncy","EUSA10 Curncy","BPSWS10 BGN Curncy","NDSWAP10 BGN Curncy","ADSW30 Curncy","CDSW30 Curncy","USSW30 Curncy","EUSA30 Curncy","BPSWS30 BGN Curncy","NDSWAP30 BGN Curncy","JYSO30 Curncy","MPSW10J BGN Curncy","MPSWF10J BGN Curncy","SASW10 Curncy","CKSW10 Curncy","PZSW10 Curncy","KWSWNI10 Curncy","CCSWNI10 Curncy","BPSWIT10 Curncy"
         ],
         "Instrument Name": [
             "AU 3Y Future","AU 10Y Future","US 2Y Future","US 5Y Future","US 10Y Future","US 10Y Ultra Future","US 30Y Future","DE 2Y Future","DE 5Y Future","DE 10Y Future","UK 10Y Future","IT 10Y Future","CA 10Y Future","JP 10Y Future","CH 1Y Swap","AU 2Y Swap","CA 2Y Swap","US 2Y Swap","DE 2Y Swap","UK 2Y Swap","NZ 2Y Swap","BR 2Y Swap","MX 2Y Swap","MX 2Y Swap OIS","SA 2Y Swap","CZ 2Y Swap","PO 2Y Swap","SK 2Y Swap","CH 2Y Swap","AU 5Y Swap","CA 5Y Swap","US 5Y Swap","DE 5Y Swap","UK 5Y Swap","NZ 5Y Swap","BR 5Y Swap","MX 5Y Swap","MX 5Y Swap OIS","SA 5Y Swap","CZ 5Y Swap","PO 5Y Swap","SK 5Y Swap","CH 5Y Swap","JP 5Y Swap","AU 10Y Swap","CA 10Y Swap","US 10Y Swap","DE 10Y Swap","UK 10Y Swap","NZ 10Y Swap","AU 30Y Swap","CA 30Y Swap","US 30Y Swap","DE 30Y Swap","UK 30Y Swap","NZ 30Y Swap","JP 30Y Swap","MX 10Y Swap","MX 10Y Swap OIS","SA 10Y Swap","CZ 10Y Swap","PO 10Y Swap","SK 10Y Swap","CH 10Y Swap","UK 10Y Swap Inf"
@@ -247,6 +247,10 @@ def main():
                     st.warning("No data after time zone adjustment.")
                     st.stop()
 
+                # Convert all yield differences to bps
+                # If original difference of 0.01 means 1bp, multiply by 100 to get difference in bps
+                adjusted_price_returns = adjusted_price_returns * 100
+
                 volatilities = calculate_volatilities(adjusted_price_returns, volatility_lookback_days)
                 covariance_matrix = calculate_covariance_matrix(adjusted_price_returns, var_lookback_days)
 
@@ -344,45 +348,37 @@ def main():
                 def fmt_val(x):
                     return f"{x:.2f} bps" if (not np.isnan(x) and not np.isinf(x)) else "N/A"
 
-                # positions_per_instrument for betas
-                positions_per_instrument = expanded_positions_vector.groupby('Instrument').sum()
-
-                # Compute VaR and cVaR
+                # For VaR/cVaR calculations
                 VaR_95_daily, VaR_99_daily, cVaR_95_daily, cVaR_99_daily = (np.nan, np.nan, np.nan, np.nan)
-                # For VaR/cVaR we had price_returns_var logic. We can keep that logic or skip if not needed.
-                # It's okay as is. If it doesn't show betas, it's about the betas, not VaR.
-                # Just leave VaR calculation as is or replicate logic:
-                # Let's reuse the full dataset for VaR calculation is not required, user complains about betas only
-                # We keep the previous logic:
-                
-                # We'll just ensure betas come from full adjusted_price_returns
-                # For VaR, we might need var_lookback data:
+                # Using a var lookback returns slice:
                 price_returns_var = adjusted_price_returns.tail(var_lookback_days)
+                positions_per_instrument = expanded_positions_vector.groupby('Instrument').sum()
                 if not price_returns_var.empty:
                     available_instruments_var = positions_per_instrument.index.intersection(price_returns_var.columns)
                     if not available_instruments_var.empty:
                         positions_for_var = positions_per_instrument.loc[available_instruments_var]
                         price_returns_var = price_returns_var[available_instruments_var]
                         if not price_returns_var.empty:
-                            portfolio_returns_var = price_returns_var.dot(positions_for_var) * 100
+                            portfolio_returns_var = price_returns_var.dot(positions_for_var)
                             if not portfolio_returns_var.empty:
                                 VaR_95_daily = -np.percentile(portfolio_returns_var, 5)
                                 VaR_99_daily = -np.percentile(portfolio_returns_var, 1)
                                 cVaR_95_daily = -portfolio_returns_var[portfolio_returns_var <= -VaR_95_daily].mean() if (portfolio_returns_var <= -VaR_95_daily).any() else np.nan
                                 cVaR_99_daily = -portfolio_returns_var[portfolio_returns_var <= -VaR_99_daily].mean() if (portfolio_returns_var <= -VaR_99_daily).any() else np.nan
 
-                # Compute Betas using full adjusted_price_returns
+                # Compute Beta using full adjusted_price_returns in bps
                 portfolio_beta = np.nan
                 instrument_betas = {}
                 if (sensitivity_rate in adjusted_price_returns.columns) and (not adjusted_price_returns.empty) and (not positions_per_instrument.empty):
-                    us10yr_returns = adjusted_price_returns[sensitivity_rate]*100
-                    portfolio_returns_for_beta = adjusted_price_returns[positions_per_instrument.index].dot(positions_per_instrument)*100
+                    # US 10yr returns in bps
+                    us10yr_returns = adjusted_price_returns[sensitivity_rate]
+                    portfolio_returns_for_beta = adjusted_price_returns[positions_per_instrument.index].dot(positions_per_instrument)
                     portfolio_beta = compute_beta(portfolio_returns_for_beta, us10yr_returns)
 
                     for instr in positions_per_instrument.index:
                         pos_val = positions_per_instrument[instr]
-                        if pos_val != 0 and instr in adjusted_price_returns.columns:
-                            instr_return = adjusted_price_returns[instr]*pos_val*100
+                        if (pos_val != 0) and (instr in adjusted_price_returns.columns):
+                            instr_return = adjusted_price_returns[instr]*pos_val
                             instr_beta = compute_beta(instr_return, us10yr_returns)
                             if not np.isnan(instr_beta):
                                 instrument_betas[instr] = (pos_val, instr_beta)
@@ -434,7 +430,7 @@ def main():
                 st.write(f"**Daily VaR at 99%:** {fmt_val(VaR_99_daily)}")
                 st.write(f"**Daily cVaR at 99%:** {fmt_val(cVaR_99_daily)}")
 
-                # Beta Section
+                # US Beta Section
                 st.subheader("📉 Beta to US 10yr Rates")
                 if not np.isnan(portfolio_beta):
                     st.write(f"**Portfolio Beta to {sensitivity_rate}:** {portfolio_beta:.4f}")
@@ -448,7 +444,7 @@ def main():
                         beta_df['Beta'] = beta_df['Beta'].round(4)
                         st.dataframe(beta_df)
 
-                        st.markdown("*Footnote:* If the US 10-year yield moves by 1bp, the portfolio's performance changes by Beta × 1bp. For example, if Beta is 0.5 and US 10-year yields fall by 1bp, the portfolio is expected to rise by ~0.5bps.")
+                        st.markdown("*Footnote:* If the US 10-year yield moves by 1bp, the portfolio's performance changes by Beta × 1bp. For example, if Beta is 0.5 and US 10-year yields fall by 1bp, the portfolio is expected to rise by approximately 0.5bps.")
                     else:
                         st.write("No individual instrument betas to display.")
                 else:
@@ -482,6 +478,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
