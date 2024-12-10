@@ -27,12 +27,10 @@ def load_historical_data(excel_file):
 
 @st.cache_data(show_spinner=False)
 def adjust_time_zones(df, instrument_country):
-    # Certain countries are considered "non-lag"
     # Non-lag countries: JP, AU, SK, CH
-    # All other instruments are shifted by one business day backward.
+    # All other instruments get shifted back by one business day
     non_lag_countries = ['JP', 'AU', 'SK', 'CH']
-    instrument_countries = pd.Series([instrument_country.get(instr, 'Other') for instr in df.columns],
-                                     index=df.columns)
+    instrument_countries = pd.Series([instrument_country.get(instr, 'Other') for instr in df.columns], index=df.columns)
     instruments_to_lag = instrument_countries[~instrument_countries.isin(non_lag_countries)].index.tolist()
 
     adjusted_df = df.copy()
@@ -42,38 +40,32 @@ def adjust_time_zones(df, instrument_country):
     return adjusted_df
 
 @st.cache_data(show_spinner=False)
-def to_weekly_data(df):
-    # Resample to weekly frequency using Friday closes
-    weekly_df = df.resample('W-FRI').last().dropna(how='all')
-    return weekly_df
+def calculate_daily_changes_in_bps(df):
+    # If yields are in percentage points (0.01 = 1%), then 1bp = 0.0001
+    # Thus, difference * 10000 = difference in bps
+    daily_changes = df.diff().dropna() * 10000
+    return daily_changes
 
 @st.cache_data(show_spinner=False)
-def calculate_weekly_changes_in_bps(weekly_df):
-    # Assuming yields in percentage points, 0.01 = 1%, so 0.01 change = 1bp
-    # Multiply changes by 100 to convert to bps
-    weekly_changes = weekly_df.diff().dropna() * 100
-    return weekly_changes
-
-@st.cache_data(show_spinner=False)
-def calculate_volatilities(weekly_changes, lookback_weeks):
-    if weekly_changes.empty:
+def calculate_volatilities(daily_changes, lookback_days):
+    if daily_changes.empty:
         return pd.Series(dtype=float)
-    recent_returns = weekly_changes.tail(lookback_weeks)
+    recent_returns = daily_changes.tail(lookback_days)
     if recent_returns.empty:
         return pd.Series(dtype=float)
-    # Annualize volatility from weekly returns: std * sqrt(52)
-    volatilities = recent_returns.std() * np.sqrt(52)
+    # Annualize daily volatility: std * sqrt(252)
+    volatilities = recent_returns.std() * np.sqrt(252)
     return volatilities
 
 @st.cache_data(show_spinner=False)
-def calculate_covariance_matrix(weekly_changes, lookback_weeks):
-    if weekly_changes.empty:
+def calculate_covariance_matrix(daily_changes, lookback_days):
+    if daily_changes.empty:
         return pd.DataFrame()
-    recent_returns = weekly_changes.tail(lookback_weeks)
+    recent_returns = daily_changes.tail(lookback_days)
     if recent_returns.empty:
         return pd.DataFrame()
-    # Annualize covariance from weekly returns: cov * 52
-    covariance_matrix = recent_returns.cov() * 52
+    # Annualize daily covariance: cov * 252
+    covariance_matrix = recent_returns.cov() * 252
     return covariance_matrix
 
 def compute_beta(x_returns, y_returns):
@@ -103,32 +95,20 @@ def guess_country_from_instrument_name(name):
             return country_codes[code]
     return 'Other'
 
-# Update instrument_country as needed for all instruments
 instrument_country = {
-    'GACGB2 Index': 'AU', 'GACGB10 Index': 'AU',
-    'TUAFWD Comdty': 'US', 'FVAFWD Comdty': 'US', 'TYAFWD Comdty': 'US', 'UXYAFWD Comdty': 'US', 'WNAFWD Comdty': 'US',
-    'DUAFWD Comdty': 'DE', 'OEAFWD Comdty': 'DE', 'RXAFWD Comdty': 'DE',
-    'GAFWD Comdty': 'UK', 'IKAFWD Comdty': 'IT', 'CNAFWD Comdty': 'CA', 'JBAFWD Comdty': 'JP',
-    'CCSWNI1 Curncy': 'CH', 'ADSW2 Curncy': 'AU', 'CDSO2 Curncy': 'CA', 'USSW2 Curncy': 'US',
-    'EUSA2 Curncy': 'DE', 'BPSWS2 BGN Curncy': 'UK', 'NDSWAP2 BGN Curncy': 'NZ', 'I39302Y Index': 'BR',
-    'MPSW2B BGN Curncy': 'MX', 'MPSWF2B Curncy': 'MX', 'SAFR1I2 BGN Curncy': 'SA', 'CKSW2 BGN Curncy': 'CZ',
-    'PZSW2 BGN Curncy': 'PO', 'KWSWNI2 BGN Curncy': 'SK', 'CCSWNI2 CMPN Curncy': 'CH',
-    'ADSW5 Curncy': 'AU', 'CDSO5 Curncy': 'CA', 'USSW5 Curncy': 'US', 'EUSA5 Curncy': 'DE',
-    'BPSWS5 BGN Curncy': 'UK', 'NDSWAP5 BGN Curncy': 'NZ', 'I39305Y Index': 'BR', 'MPSW5E Curncy': 'MX',
-    'MPSWF5E Curncy': 'MX', 'SASW5 Curncy': 'SA', 'CKSW5 Curncy': 'CZ', 'PZSW5 Curncy': 'PO',
-    'KWSWNI5 Curncy': 'SK', 'CCSWNI5 Curncy': 'CH', 'JYSO5 Curncy': 'JP', 'ADSW10 Curncy': 'AU',
-    'CDSO10 Curncy': 'CA', 'USSW10 Curncy': 'US', 'EUSA10 Curncy': 'DE', 'BPSWS10 BGN Curncy': 'UK',
-    'NDSWAP10 BGN Curncy': 'NZ', 'ADSW30 Curncy': 'AU', 'CDSW30 Curncy': 'CA', 'USSW30 Curncy': 'US',
-    'EUSA30 Curncy': 'DE', 'BPSWS30 BGN Curncy': 'UK', 'NDSWAP30 BGN Curncy': 'NZ', 'JYSO30 Curncy': 'JP',
-    'MPSW10J BGN Curncy': 'MX', 'MPSWF10J BGN Curncy': 'MX', 'SASW10 Curncy': 'SA', 'CKSW10 Curncy': 'CZ',
-    'PZSW10 Curncy': 'PO', 'KWSWNI10 Curncy': 'SK', 'CCSWNI10 Curncy': 'CH', 'BPSWIT10 Curncy': 'IT'
+    'GACGB2 Index': 'AU',
+    'GACGB10 Index': 'AU',
+    # Add other instruments and mappings as needed
+    'US 2Y Future': 'US',
+    'US 5Y Future': 'US',
+    'US 10Y Future': 'US',
 }
 
 def main():
     st.title('📈 Fixed Income Portfolio Risk Attribution')
     st.write("App initialized successfully.")
 
-    # Full arrays with all instruments (as previously shown)
+    # Full arrays with all instruments
     instruments_data = pd.DataFrame({
         "Ticker": [
             "GACGB2 Index","GACGB10 Index","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty","UXYAFWD Comdty",
@@ -157,7 +137,10 @@ def main():
             "SK 10Y Swap","CH 10Y Swap","UK 10Y Swap Inf"
         ],
         "Portfolio": [
-            "DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","EM","DM","DM","DM","DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","EM","DM","DM","DM","DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","EM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","DM"
+            "DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","EM","DM","DM","DM",
+            "DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","EM","DM","DM","DM","DM","DM","DM","EM",
+            "EM","EM","EM","EM","EM","EM","EM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM",
+            "DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","DM"
         ]
     })
 
@@ -203,12 +186,9 @@ def main():
 
     with tabs[1]:
         st.header("🔄 Input Positions")
-
-        # DM table
         st.subheader('📈 DM Portfolio Positions')
         gb_dm = GridOptionsBuilder.from_dataframe(default_positions_dm)
         gb_dm.configure_default_column(editable=True, resizable=True)
-        # Removed the manual width setting here
         dm_options = gb_dm.build()
         dm_response = AgGrid(
             default_positions_dm,
@@ -216,16 +196,14 @@ def main():
             height=600,
             width='100%',
             enable_enterprise_modules=False,
-            fit_columns_on_grid_load=True  # Auto-fit columns on load
+            fit_columns_on_grid_load=True
         )
         positions_data_dm = dm_response['data']
 
-        # EM table
         if len(em_instruments) > 0:
             st.subheader('🌍 EM Portfolio Positions')
             gb_em = GridOptionsBuilder.from_dataframe(default_positions_em)
             gb_em.configure_default_column(editable=True, resizable=True)
-            # No manual width setting, rely on auto-fit
             em_options = gb_em.build()
             em_response = AgGrid(
                 default_positions_em,
@@ -233,7 +211,7 @@ def main():
                 height=600,
                 width='100%',
                 enable_enterprise_modules=False,
-                fit_columns_on_grid_load=True  # Auto-fit columns on load
+                fit_columns_on_grid_load=True
             )
             positions_data_em = em_response['data']
         else:
@@ -241,26 +219,27 @@ def main():
 
     with tabs[2]:
         st.header("⚙️ Configuration Settings")
-        # Weekly data: 1 year (52 weeks)
+        # Daily lookbacks (approx):
+        # 1 month ~21 days, 3 months ~63 days, 6 months ~126 days, 1 year ~252 days, etc.
         volatility_period_options = {
-            '📅 1 month (approx 4-5 weeks)': 5,
-            '📆 3 months (~13 weeks)': 13,
-            '📅 6 months (~26 weeks)': 26,
-            '🗓️ 1 year (52 weeks)': 52,
-            '📅 3 years (156 weeks)': 156,
-            '📆 5 years (260 weeks)': 260,
-            '📅 10 years (520 weeks)': 520
+            '📅 1 month (~21 days)': 21,
+            '📆 3 months (~63 days)': 63,
+            '📅 6 months (~126 days)': 126,
+            '🗓️ 1 year (252 days)': 252,
+            '📅 3 years (756 days)': 756,
+            '📆 5 years (1260 days)': 1260,
+            '📅 10 years (2520 days)': 2520
         }
         volatility_period = st.selectbox('Volatility lookback:', list(volatility_period_options.keys()), index=3)
-        volatility_lookback_weeks = volatility_period_options[volatility_period]
+        volatility_lookback_days = volatility_period_options[volatility_period]
 
         var_period_options = {
-            '📆 5 years (~260 weeks)': 260,
-            '📆 10 years (~520 weeks)': 520,
-            '📆 15 years (~780 weeks)': 780
+            '📆 5 years (~1260 days)': 1260,
+            '📆 10 years (~2520 days)': 2520,
+            '📆 15 years (~3780 days)': 3780
         }
         var_period = st.selectbox('VaR lookback:', list(var_period_options.keys()), index=1)
-        var_lookback_weeks = var_period_options[var_period]
+        var_lookback_days = var_period_options[var_period]
 
     with tabs[0]:
         st.header("📊 Risk Attribution Results")
@@ -274,20 +253,14 @@ def main():
 
                 df = adjust_time_zones(df, instrument_country)
 
-                # Convert daily data to weekly closes
-                weekly_df = to_weekly_data(df)
-                if weekly_df.empty:
-                    st.warning("No weekly data available.")
+                # Now using daily changes directly
+                daily_changes = calculate_daily_changes_in_bps(df)
+                if daily_changes.empty:
+                    st.warning("No daily changes computed.")
                     st.stop()
 
-                # Calculate weekly changes in bps
-                weekly_changes = calculate_weekly_changes_in_bps(weekly_df)
-                if weekly_changes.empty:
-                    st.warning("No weekly changes computed.")
-                    st.stop()
-
-                volatilities = calculate_volatilities(weekly_changes, volatility_lookback_weeks)
-                covariance_matrix = calculate_covariance_matrix(weekly_changes, var_lookback_weeks)
+                volatilities = calculate_volatilities(daily_changes, volatility_lookback_days)
+                covariance_matrix = calculate_covariance_matrix(daily_changes, var_lookback_days)
 
                 positions_data_dm = pd.DataFrame(positions_data_dm).astype({'Outright': float, 'Curve': float, 'Spread': float})
                 if not positions_data_em.empty:
@@ -389,9 +362,9 @@ def main():
                 def fmt_val(x):
                     return f"{x:.2f} bps" if (not np.isnan(x) and not np.isinf(x)) else "N/A"
 
-                # VaR/cVaR calculations on weekly returns
+                # VaR/cVaR calculations on daily returns
                 VaR_95, VaR_99, cVaR_95, cVaR_99 = (np.nan, np.nan, np.nan, np.nan)
-                price_returns_var = weekly_changes.tail(var_lookback_weeks)
+                price_returns_var = daily_changes.tail(var_lookback_days)
                 positions_per_instrument = expanded_positions_vector.groupby('Instrument').sum()
                 if not price_returns_var.empty:
                     available_instruments_var = positions_per_instrument.index.intersection(price_returns_var.columns)
@@ -406,18 +379,18 @@ def main():
                                 cVaR_95 = -portfolio_returns_var[portfolio_returns_var <= -VaR_95].mean() if (portfolio_returns_var <= -VaR_95).any() else np.nan
                                 cVaR_99 = -portfolio_returns_var[portfolio_returns_var <= -VaR_99].mean() if (portfolio_returns_var <= -VaR_99).any() else np.nan
 
-                # Compute Beta with weekly returns
+                # Compute Beta using daily returns
                 portfolio_beta = np.nan
                 instrument_betas = {}
-                if (sensitivity_rate in weekly_changes.columns) and (not weekly_changes.empty) and (not positions_per_instrument.empty):
-                    us10yr_returns = weekly_changes[sensitivity_rate]
-                    portfolio_returns_for_beta = weekly_changes[positions_per_instrument.index].dot(positions_per_instrument)
+                if (sensitivity_rate in daily_changes.columns) and (not daily_changes.empty) and (not positions_per_instrument.empty):
+                    us10yr_returns = daily_changes[sensitivity_rate]  # daily returns in bps
+                    portfolio_returns_for_beta = daily_changes[positions_per_instrument.index].dot(positions_per_instrument)
                     portfolio_beta = compute_beta(portfolio_returns_for_beta, us10yr_returns)
 
                     for instr in positions_per_instrument.index:
                         pos_val = positions_per_instrument[instr]
-                        if (pos_val != 0) and (instr in weekly_changes.columns):
-                            instr_return = weekly_changes[instr] * pos_val
+                        if (pos_val != 0) and (instr in daily_changes.columns):
+                            instr_return = daily_changes[instr] * pos_val
                             instr_beta = compute_beta(instr_return, us10yr_returns)
                             if not np.isnan(instr_beta):
                                 instrument_betas[instr] = (pos_val, instr_beta)
@@ -459,21 +432,21 @@ def main():
 
                 metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
                 metrics_col1.metric(label="📊 Total Portfolio Volatility", value=fmt_val(portfolio_volatility))
-                metrics_col2.metric(label="📉 Weekly VaR (95%)", value=fmt_val(VaR_95))
-                metrics_col3.metric(label="📉 Weekly VaR (99%)", value=fmt_val(VaR_99))
-                metrics_col4.metric(label="📈 Weekly cVaR (95%)", value=fmt_val(cVaR_95))
+                metrics_col2.metric(label="📉 Daily VaR (95%)", value=fmt_val(VaR_95))
+                metrics_col3.metric(label="📉 Daily VaR (99%)", value=fmt_val(VaR_99))
+                metrics_col4.metric(label="📈 Daily cVaR (95%)", value=fmt_val(cVaR_95))
 
                 st.subheader('📈 Value at Risk (VaR) and Conditional VaR (cVaR)')
-                st.write(f"**Weekly VaR at 95%:** {fmt_val(VaR_95)}")
-                st.write(f"**Weekly cVaR at 95%:** {fmt_val(cVaR_95)}")
-                st.write(f"**Weekly VaR at 99%:** {fmt_val(VaR_99)}")
-                st.write(f"**Weekly cVaR at 99%:** {fmt_val(cVaR_99)}")
+                st.write(f"**Daily VaR at 95%:** {fmt_val(VaR_95)}")
+                st.write(f"**Daily cVaR at 95%:** {fmt_val(cVaR_95)}")
+                st.write(f"**Daily VaR at 99%:** {fmt_val(VaR_99)}")
+                st.write(f"**Daily cVaR at 99%:** {fmt_val(cVaR_99)}")
 
-                st.subheader("📉 Beta to US 10yr Rates (Weekly Basis)")
+                st.subheader("📉 Beta to US 10yr Rates (Daily Basis)")
                 if not np.isnan(portfolio_beta):
-                    st.write(f"**Portfolio Beta to {sensitivity_rate} (Weekly):** {portfolio_beta:.4f}")
+                    st.write(f"**Portfolio Beta to {sensitivity_rate} (Daily):** {portfolio_beta:.4f}")
                     if instrument_betas:
-                        st.write("**Instrument Betas to US 10yr Rates (including Position, Weekly):**")
+                        st.write("**Instrument Betas to US 10yr Rates (including Position, Daily):**")
                         beta_data = []
                         for instr, (pos_val, b) in instrument_betas.items():
                             beta_data.append({'Instrument': instr, 'Position': pos_val, 'Beta': b})
@@ -482,7 +455,7 @@ def main():
                         beta_df['Beta'] = beta_df['Beta'].round(4)
                         st.dataframe(beta_df)
 
-                        st.markdown("*Footnote:* If the US 10-year yield moves by 1bp in a week, the portfolio changes approximately Beta × 1bp in that week.")
+                        st.markdown("*Footnote:* If the US 10-year yield moves by 1bp in a day, the portfolio changes approximately Beta × 1bp in that day.")
                     else:
                         st.write("No individual instrument betas to display.")
                 else:
@@ -492,7 +465,6 @@ def main():
                     st.subheader('📄 Detailed Risk Contributions by Instrument')
                     gb_risk = GridOptionsBuilder.from_dataframe(risk_contributions_formatted)
                     gb_risk.configure_default_column(editable=False, resizable=True)
-                    # No manual width setting, rely on auto-fit
                     risk_grid_options = gb_risk.build()
 
                     AgGrid(
@@ -501,7 +473,7 @@ def main():
                         height=400,
                         width='100%',
                         enable_enterprise_modules=False,
-                        fit_columns_on_grid_load=True  # Auto-fit columns on load
+                        fit_columns_on_grid_load=True
                     )
 
                     csv = risk_contributions_formatted.to_csv(index=False).encode('utf-8')
