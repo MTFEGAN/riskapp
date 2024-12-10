@@ -19,6 +19,14 @@ def load_historical_data(excel_file):
             df_sheet = excel.parse(sheet_name=sheet, index_col='date', parse_dates=True)
             df_list.append(df_sheet)
         df = pd.concat(df_list, axis=1)
+        
+        # **Drop Weekend Datapoints**
+        # Ensure the index is datetime
+        if not pd.api.types.is_datetime64_any_dtype(df.index):
+            df.index = pd.to_datetime(df.index)
+        # Filter out weekends (Saturday=5, Sunday=6)
+        df = df[~df.index.dayofweek.isin([5, 6])]
+        
         return df
     except Exception as e:
         st.error(f"Error reading Excel file: {e}")
@@ -466,7 +474,15 @@ def main():
             st.warning(f"The following instruments are missing from the covariance matrix and will be excluded from calculations: {missing_instruments}")
             # Remove missing instruments from positions_vector and expanded_cov_matrix
             # Drop any positions corresponding to missing instruments
-            expanded_positions_vector = expanded_positions_vector.drop(labels=[(instr, pos_type) for instr in missing_instruments for pos_type in ['Outright', 'Curve', 'Spread'] if (instr, pos_type) in expanded_positions_vector.index], errors='ignore')
+            expanded_positions_vector = expanded_positions_vector.drop(
+                labels=[
+                    (instr, pos_type) 
+                    for instr in missing_instruments 
+                    for pos_type in ['Outright', 'Curve', 'Spread'] 
+                    if (instr, pos_type) in expanded_positions_vector.index
+                ], 
+                errors='ignore'
+            )
             expanded_index = expanded_positions_vector.index
             expanded_cov_matrix = pd.DataFrame(index=expanded_index, columns=expanded_index)
             instruments = expanded_positions_vector.index.get_level_values('Instrument').unique()
@@ -521,14 +537,8 @@ def main():
             st.error("Positions data is missing 'Instrument' or 'Position Type' columns.")
             return
 
-        # Ensure 'US 10Y Future' is included in risk_contributions
-        if (sensitivity_rate, 'Outright') not in expanded_positions_vector.index:
-            risk_contributions = risk_contributions.append({
-                'Instrument': sensitivity_rate,
-                'Position Type': 'Outright',
-                'Position': 0.0,
-                'Portfolio': 'DM'  # Assign to DM or another appropriate portfolio if necessary
-            }, ignore_index=True)
+        # **Ensure 'US 10Y Future' is included in risk_contributions only if it has a non-zero position**
+        # Since we've already appended 'US 10Y Future' with zero position, we will filter it out in the formatted DataFrame
 
         # Merge to align with expanded_volatilities
         risk_contributions = risk_contributions.set_index(['Instrument', 'Position Type']).reindex(expanded_positions_vector.index).reset_index()
@@ -552,6 +562,11 @@ def main():
              'Instrument Volatility per 1Y Duration (bps)', 'Contribution to Volatility (bps)', 'Percent Contribution (%)', 'Portfolio']
         ]
 
+        # **Exclude Rows with Zero or NaN Positions**
+        risk_contributions_formatted = risk_contributions_formatted[
+            risk_contributions_formatted['Position'].notna() & (risk_contributions_formatted['Position'] != 0)
+        ]
+
         # Add bar charts to 'Percent Contribution (%)' column
         styled_risk_contributions = risk_contributions_formatted.style.bar(
             subset=['Percent Contribution (%)'], color='#d65f5f'
@@ -568,7 +583,7 @@ def main():
         st.markdown(styled_risk_contributions.to_html(), unsafe_allow_html=True)
 
         # Compute risk contributions by Portfolio (DM and EM)
-        risk_contributions_by_portfolio = risk_contributions.groupby('Portfolio').agg({
+        risk_contributions_by_portfolio = risk_contributions_formatted.groupby('Portfolio').agg({
             'Contribution to Volatility (bps)': 'sum'
         })
         risk_contributions_by_portfolio['Percent Contribution (%)'] = (risk_contributions_by_portfolio['Contribution to Volatility (bps)'] / portfolio_volatility) * 100
