@@ -85,7 +85,7 @@ def calculate_covariance_matrix(adjusted_price_returns, lookback_days):
 
 def main():
     # Set page configuration to use the wide layout
-    st.set_page_config(page_title="Fixed Income Portfolio Risk Attribution", layout="wide")
+    st.set_page_config(page_title="📈 Fixed Income Portfolio Risk Attribution", layout="wide")
     st.title('📈 Fixed Income Portfolio Risk Attribution')
     
     # Define a consistent color theme
@@ -603,7 +603,7 @@ def main():
             })
             risk_contributions_by_portfolio['Percent Contribution (%)'] = (risk_contributions_by_portfolio['Contribution to Volatility (bps)'] / portfolio_volatility) * 100
 
-            # Create a bar chart for risk contributions by portfolio
+            # Create a pie chart for risk contributions by portfolio
             fig_portfolio_risk = px.pie(
                 risk_contributions_by_portfolio.reset_index(),
                 names='Portfolio',
@@ -719,5 +719,13 @@ def main():
                 st.write("**Available Columns:**")
                 st.write(price_returns_var.columns.tolist())
 
-    if __name__ == '__main__':
-        main()
+            # Display Portfolio Volatility
+            st.subheader('📊 Total Portfolio Volatility')
+            st.write(f"**Total Portfolio Volatility (Annualized):** {portfolio_volatility:.2f} bps")
+
+        else:
+            st.info('💡 Click "🚀 Run Risk Attribution" to calculate risk metrics.')
+
+if __name__ == '__main__':
+    main()
+
