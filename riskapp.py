@@ -9,25 +9,19 @@ from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 # Must be the first Streamlit command
 st.set_page_config(page_title="📈 Fixed Income Portfolio Risk Attribution", layout="wide")
 
-# Dark theme adjustments for better readability
+# More comprehensive dark theme:
 st.markdown("""
 <style>
-body {
-    background-color: #202020;
-    color: #ffffff;
-    font-family: sans-serif;
+html, body, [data-testid="stHeader"], [data-testid="stSidebar"], .stApp, .css-18e3th9, .css-1outpf7, .css-1y4p8pa, .css-12oz5g7, .css-fblp2m, .css-10trblm, .css-163ttbj, .stMarkdown, .css-17we17i, .css-1cpxqw2, .css-1vbd788 {
+    background-color: #202020 !important;
+    color: #f0f0f0 !important;
 }
-[data-testid="stHeader"] {
-    background-color: #202020;
-}
-[data-testid="stSidebar"] {
-    background-color: #2e2e2e;
-}
-.stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4, .stMarkdown h5, .stMarkdown h6, .stMarkdown p, .stMarkdown span, .stMarkdown div {
-    color: #ffffff !important;
-}
-a, .stMarkdown a, .css-1inhosi, .css-fblp2m, .css-10trblm, .css-163ttbj {
+a, .stMarkdown a, .css-1inhosi {
     color: #87cefa !important;
+}
+.ag-header-container, .ag-cell, .ag-row {
+    background-color: #2e2e2e !important;
+    color: #f0f0f0 !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -100,10 +94,6 @@ def calculate_covariance_matrix(adjusted_price_returns, lookback_days):
     return covariance_matrix
 
 def compute_beta(x_returns, y_returns):
-    """
-    Compute beta = Cov(x,y)/Var(y).
-    Returns np.nan if not possible.
-    """
     if x_returns.empty or y_returns.empty:
         return np.nan
     common_dates = x_returns.index.intersection(y_returns.index)
@@ -123,7 +113,6 @@ def main():
     st.title('📈 Fixed Income Portfolio Risk Attribution')
     st.write("App initialized successfully.")
 
-    # Full instruments_data
     instruments_data = pd.DataFrame({
         "Ticker": [
             "YM1 Comdty","XM1 Comdty","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty","UXYAFWD Comdty","WNAFWD Comdty","DUAFWD Comdty","OEAFWD Comdty","RXAFWD Comdty","GAFWD Comdty","IKAFWD Comdty","CNAFWD Comdty","JBAFWD Comdty","CCSWNI1 Curncy","ADSW2 Curncy","CDSO2 Curncy","USSW2 Curncy","EUSA2 Curncy","BPSWS2 BGN Curncy","NDSWAP2 BGN Curncy","I39302Y Index","MPSW2B BGN Curncy","MPSWF2B Curncy","SAFR1I2 BGN Curncy","CKSW2 BGN Curncy","PZSW2 BGN Curncy","KWSWNI2 BGN Curncy","CCSWNI2 CMPN Curncy","ADSW5 Curncy","CDSO5 Curncy","USSW5 Curncy","EUSA5 Curncy","BPSWS5 BGN Curncy","NDSWAP5 BGN Curncy","I39305Y Index","MPSW5E Curncy","MPSWF5E Curncy","SASW5 Curncy","CKSW5 Curncy","PZSW5 Curncy","KWSWNI5 Curncy","CCSWNI5 Curncy","JYSO5 Curncy","ADSW10 Curncy","CDSO10 Curncy","USSW10 Curncy","EUSA10 Curncy","BPSWS10 BGN Curncy","NDSWAP10 BGN Curncy","ADSW30 Curncy","CDSW30 Curncy","USSW30 Curncy","EUSA30 Curncy","BPSWS30 BGN Curncy","NDSWAP30 BGN Curncy","JYSO30 Curncy","MPSW10J BGN Curncy","MPSWF10J BGN Curncy","SASW10 Curncy","CKSW10 Curncy","PZSW10 Curncy","KWSWNI10 Curncy","CCSWNI10 Curncy","BPSWIT10 Curncy"
@@ -203,7 +192,7 @@ def main():
 
     with tabs[1]:
         st.header("🔄 Input Positions")
-        st.write("All DM and EM instruments are displayed with no pagination. Scroll to see all instruments.")
+        st.write("All DM and EM instruments are displayed with no pagination.")
 
         # DM table
         st.subheader('📈 DM Portfolio Positions')
@@ -381,7 +370,6 @@ def main():
                 risk_contributions_formatted = risk_contributions_formatted[
                     risk_contributions_formatted['Position'].notna() & (risk_contributions_formatted['Position'] != 0)
                 ]
-                # Round decimals to 2
                 numeric_cols = ['Position', 'Position Stand-alone Volatility', 'Instrument Volatility per 1Y Duration (bps)', 'Contribution to Volatility (bps)', 'Percent Contribution (%)']
                 risk_contributions_formatted[numeric_cols] = risk_contributions_formatted[numeric_cols].round(2)
 
@@ -411,7 +399,6 @@ def main():
                 else:
                     VaR_95_daily, VaR_99_daily, cVaR_95_daily, cVaR_99_daily = (np.nan, np.nan, np.nan, np.nan)
 
-                # Compute beta
                 portfolio_beta = np.nan
                 instrument_betas = {}
                 if (sensitivity_rate in price_returns_var.columns) and not positions_per_instrument.empty and not price_returns_var.empty:
@@ -423,8 +410,8 @@ def main():
                         instr_beta = compute_beta(instr_return, us10yr_returns)
                         instrument_betas[instr] = instr_beta
 
-                # Pie chart for instrument-level risk contributions
                 if not risk_contributions_formatted.empty:
+                    # Pie chart for instrument-level risk contributions
                     fig_instrument_pie = px.pie(
                         risk_contributions_formatted,
                         names='Instrument',
@@ -457,7 +444,6 @@ def main():
                 else:
                     st.warning("No risk contributions to display.")
 
-                # Display metrics
                 metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
                 metrics_col1.metric(label="📊 Total Portfolio Volatility", value=fmt_val(portfolio_volatility))
                 metrics_col2.metric(label="📉 Daily VaR (95%)", value=fmt_val(VaR_95_daily))
@@ -470,7 +456,6 @@ def main():
                 st.write(f"**Daily VaR at 99%:** {fmt_val(VaR_99_daily)}")
                 st.write(f"**Daily cVaR at 99%:** {fmt_val(cVaR_99_daily)}")
 
-                # Beta section
                 st.subheader("📉 Beta to US 10yr Rates")
                 if not np.isnan(portfolio_beta):
                     st.write(f"**Portfolio Beta to {sensitivity_rate}:** {portfolio_beta:.4f}")
@@ -482,7 +467,6 @@ def main():
                 else:
                     st.write(f"No beta computed. Check {sensitivity_rate} data and positions.")
 
-                # Detailed contributions table
                 if not risk_contributions_formatted.empty:
                     st.subheader('📄 Detailed Risk Contributions by Instrument')
                     gb_risk = GridOptionsBuilder.from_dataframe(risk_contributions_formatted)
