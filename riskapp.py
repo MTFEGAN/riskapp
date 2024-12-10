@@ -6,7 +6,10 @@ from collections import OrderedDict
 import plotly.express as px
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
-# Apply dark theme via CSS
+# Must be the first Streamlit command:
+st.set_page_config(page_title="📈 Fixed Income Portfolio Risk Attribution", layout="wide")
+
+# Apply dark theme via CSS after set_page_config
 st.markdown("""
 <style>
 body {
@@ -37,10 +40,8 @@ def load_historical_data(excel_file):
             df_sheet = excel.parse(sheet_name=sheet, index_col='date', parse_dates=True)
             df_list.append(df_sheet)
         df = pd.concat(df_list, axis=1)
-
         if not pd.api.types.is_datetime64_any_dtype(df.index):
             df.index = pd.to_datetime(df.index)
-
         # Drop weekends
         df = df[~df.index.dayofweek.isin([5, 6])]
         return df
@@ -71,7 +72,6 @@ def adjust_time_zones(price_returns, instrument_country):
     non_lag_countries = ['JP', 'AU', 'SK', 'CH']
     instrument_countries = pd.Series([instrument_country.get(instr, 'Other') for instr in price_returns.columns],
                                      index=price_returns.columns)
-
     instruments_to_lag = instrument_countries[~instrument_countries.isin(non_lag_countries)].index.tolist()
     adjusted_price_returns = price_returns.copy()
     if instruments_to_lag:
@@ -101,8 +101,8 @@ def calculate_covariance_matrix(adjusted_price_returns, lookback_days):
 
 def compute_beta(x_returns, y_returns):
     """
-    Compute beta = Cov(x,y)/Var(y) for two aligned return series.
-    Returns np.nan if computation not possible.
+    Compute beta = Cov(x,y)/Var(y).
+    Returns np.nan if not possible.
     """
     if x_returns.empty or y_returns.empty:
         return np.nan
@@ -120,12 +120,9 @@ def compute_beta(x_returns, y_returns):
     return cov / var_y
 
 def main():
-    st.set_page_config(page_title="📈 Fixed Income Portfolio Risk Attribution", layout="wide")
     st.title('📈 Fixed Income Portfolio Risk Attribution')
-
     st.write("App initialized successfully.")
 
-    # Minimal instruments definition; expand as needed
     instruments_data = pd.DataFrame({
         'Ticker': [
             'YM1 Comdty', 'XM1 Comdty', 'TUAFWD Comdty', 'FVAFWD Comdty', 'TYAFWD Comdty'
@@ -137,11 +134,9 @@ def main():
             'DM', 'DM', 'DM', 'DM', 'DM'
         ]
     })
-    # In a real scenario, add all instruments as needed to instruments_data.
 
     st.sidebar.header("🔍 Sensitivity Rate Configuration")
     excel_file = 'historical_data.xlsx'
-
     if not os.path.exists(excel_file):
         st.sidebar.error(f"❌ '{excel_file}' not found.")
         st.stop()
@@ -162,7 +157,6 @@ def main():
         index=default_index
     )
 
-    instrument_portfolio = dict(zip(instruments_data['Instrument Name'], instruments_data['Portfolio']))
     instrument_country = {
         'AU 3Y Future': 'AU',
         'AU 10Y Future': 'AU',
@@ -174,7 +168,6 @@ def main():
     dm_instruments = instruments_data[instruments_data['Portfolio'] == 'DM']['Instrument Name'].tolist()
     em_instruments = instruments_data[instruments_data['Portfolio'] == 'EM']['Instrument Name'].tolist()
 
-    # Show all instruments fully: no pagination
     default_positions_dm = pd.DataFrame({
         'Instrument': dm_instruments,
         'Outright': [0.0]*len(dm_instruments),
@@ -209,16 +202,14 @@ def main():
 
     with tabs[1]:
         st.header("🔄 Input Positions")
-        st.write("Enter DM and EM positions below. All instruments visible at once.")
+        st.write("Enter DM and EM positions below. All instruments visible.")
 
         st.subheader('📈 DM Portfolio Positions')
         gb_dm = GridOptionsBuilder.from_dataframe(default_positions_dm)
-        # No pagination => all instruments visible
         gb_dm.configure_default_column(editable=True, groupable=True)
         gb_dm.configure_columns(['Outright', 'Curve', 'Spread'], editable=True, cellStyle=cell_style_jscode)
         gb_dm.configure_column('Instrument', editable=False)
         grid_options_dm = gb_dm.build()
-        # Increase height if many instruments
         grid_response_dm = AgGrid(
             default_positions_dm,
             gridOptions=grid_options_dm,
@@ -274,18 +265,18 @@ def main():
             with st.spinner('Calculating risk attribution...'):
                 df = load_historical_data(excel_file)
                 if df.empty:
-                    st.error("No data loaded. Check Excel file.")
+                    st.error("No data loaded. Check Excel.")
                     st.stop()
 
                 df = process_yields(df)
                 price_returns = calculate_returns(df)
                 if price_returns.empty:
-                    st.warning("No returns calculated. Check data.")
+                    st.warning("No returns. Check data.")
                     st.stop()
 
                 adjusted_price_returns = adjust_time_zones(price_returns, instrument_country)
                 if adjusted_price_returns.empty:
-                    st.warning("No data after time zone adjustment.")
+                    st.warning("No data after TZ adjustment.")
                     st.stop()
 
                 volatilities = calculate_volatilities(adjusted_price_returns, volatility_lookback_days)
@@ -314,12 +305,10 @@ def main():
 
                 expanded_positions_data = pd.DataFrame(positions_list)
                 if expanded_positions_data.empty:
-                    st.warning("No active positions. Enter positions and run again.")
+                    st.warning("No active positions. Enter positions.")
                     st.stop()
 
                 expanded_positions_vector = expanded_positions_data.set_index(['Instrument', 'Position Type'])['Position']
-
-                # Ensure sensitivity_rate included
                 if sensitivity_rate not in expanded_positions_vector.index.get_level_values('Instrument'):
                     zero_position = pd.Series(
                         0.0,
@@ -327,22 +316,17 @@ def main():
                     )
                     expanded_positions_vector = pd.concat([expanded_positions_vector, zero_position])
 
-                if expanded_positions_vector.empty:
-                    st.warning("No positions after processing.")
-                    st.stop()
-
                 if covariance_matrix.empty:
-                    st.warning("Covariance matrix is empty. No overlapping instruments.")
+                    st.warning("Covariance matrix empty.")
                     st.stop()
 
                 instruments = expanded_positions_vector.index.get_level_values('Instrument').unique()
                 missing_instruments = [instr for instr in instruments if instr not in covariance_matrix.index]
                 if missing_instruments:
-                    st.warning(f"Missing instruments in covariance: {missing_instruments}")
                     drop_labels = [(instr, pt) for instr in missing_instruments for pt in ['Outright', 'Curve', 'Spread']]
                     expanded_positions_vector = expanded_positions_vector.drop(labels=drop_labels, errors='ignore')
                     if expanded_positions_vector.empty:
-                        st.warning("All instruments missing. Cannot proceed.")
+                        st.warning("All instruments missing from covariance.")
                         st.stop()
                     instruments = expanded_positions_vector.index.get_level_values('Instrument').unique()
 
@@ -359,12 +343,12 @@ def main():
                         expanded_cov_matrix.loc[pos1, :] = covariance_submatrix.loc[instr1, valid_instruments].values
                     else:
                         expanded_cov_matrix.loc[pos1, :] = 0.0
-
                 expanded_cov_matrix = expanded_cov_matrix.astype(float)
+
                 portfolio_variance = np.dot(expanded_positions_vector.values,
                                             np.dot(expanded_cov_matrix.values, expanded_positions_vector.values))
                 if np.isnan(portfolio_variance) or portfolio_variance <= 0:
-                    st.warning("Portfolio variance is invalid (NaN or non-positive).")
+                    st.warning("Portfolio variance invalid.")
                     st.stop()
 
                 portfolio_volatility = np.sqrt(portfolio_variance)
@@ -372,7 +356,6 @@ def main():
                     st.warning("Volatility is NaN.")
                     st.stop()
 
-                # Risk contributions
                 expanded_volatilities = expanded_positions_vector.index.get_level_values('Instrument').map(volatilities).to_series(index=expanded_positions_vector.index)
                 standalone_volatilities = expanded_positions_vector.abs() * expanded_volatilities
                 marginal_contributions = expanded_cov_matrix.dot(expanded_positions_vector)
@@ -395,7 +378,7 @@ def main():
                     risk_contributions_formatted['Position'].notna() & (risk_contributions_formatted['Position'] != 0)
                 ]
 
-                # VaR and cVaR computations
+                # VaR and cVaR
                 price_returns_var = adjusted_price_returns.tail(var_lookback_days)
                 if price_returns_var.empty:
                     VaR_95_daily, VaR_99_daily, cVaR_95_daily, cVaR_99_daily = (np.nan, np.nan, np.nan, np.nan)
@@ -419,30 +402,26 @@ def main():
                                 cVaR_95_daily = -portfolio_returns[portfolio_returns <= -VaR_95_daily].mean() if (portfolio_returns <= -VaR_95_daily).any() else np.nan
                                 cVaR_99_daily = -portfolio_returns[portfolio_returns <= -VaR_99_daily].mean() if (portfolio_returns <= -VaR_99_daily).any() else np.nan
 
-                # Beta computations
-                # We'll use price_returns_var for beta calculations as well.
-                # Beta of the portfolio to US 10yr = Cov(portfolio, US10yr)/Var(US10yr)
-                # Also each instrument's beta: instrument_return = price_returns_var[instrument]*instrument_position
+                def fmt_val(x):
+                    return f"{x:.2f} bps" if not np.isnan(x) else "N/A"
+
+                # Compute Beta for portfolio and each instrument
+                portfolio_beta = np.nan
+                instrument_betas = {}
                 if sensitivity_rate in price_returns_var.columns:
-                    # Compute portfolio returns aligned
-                    portfolio_returns_for_beta = price_returns_var.dot(positions_per_instrument) * 100
-                    us10yr_returns = price_returns_var[sensitivity_rate] * 100
-                    portfolio_beta = compute_beta(portfolio_returns_for_beta, us10yr_returns)
+                    # Portfolio returns for beta
+                    if not positions_per_instrument.empty:
+                        portfolio_returns_for_beta = price_returns_var.dot(positions_per_instrument) * 100
+                        us10yr_returns = price_returns_var[sensitivity_rate] * 100
+                        portfolio_beta = compute_beta(portfolio_returns_for_beta, us10yr_returns)
+                        # Instrument betas
+                        instruments_for_beta = positions_per_instrument.index
+                        for instr in instruments_for_beta:
+                            instr_return = price_returns_var[instr]*positions_per_instrument[instr]*100
+                            instr_beta = compute_beta(instr_return, us10yr_returns)
+                            instrument_betas[instr] = instr_beta
 
-                    # Compute each instrument's beta
-                    # For each instrument: instrument_return = price_returns_var[instrument]*positions_per_instrument[instrument]
-                    instruments_for_beta = positions_per_instrument.index
-                    instrument_betas = {}
-                    for instr in instruments_for_beta:
-                        instr_return = price_returns_var[instr]*positions_per_instrument[instr]*100
-                        instr_beta = compute_beta(instr_return, us10yr_returns)
-                        instrument_betas[instr] = instr_beta
-
-                else:
-                    portfolio_beta = np.nan
-                    instrument_betas = {}
-
-                # Plot risk contributions
+                # Risk contributions chart
                 if not risk_contributions_formatted.empty:
                     fig_risk_contributions = px.bar(
                         risk_contributions_formatted,
@@ -473,13 +452,10 @@ def main():
                         st.plotly_chart(fig_portfolio_risk, use_container_width=True)
                     else:
                         st.warning("No portfolio-level contributions available.")
-
                 else:
                     st.warning("No risk contributions to display.")
 
-                # Metrics
-                def fmt_val(x):
-                    return f"{x:.2f} bps" if not np.isnan(x) else "N/A"
+                # Show metrics
                 metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
                 metrics_col1.metric(label="📊 Total Portfolio Volatility", value=fmt_val(portfolio_volatility))
                 metrics_col2.metric(label="📉 Daily VaR (95%)", value=fmt_val(VaR_95_daily))
@@ -490,15 +466,14 @@ def main():
                 st.write(f"**Daily VaR at 95%:** {fmt_val(VaR_95_daily)}")
                 st.write(f"**Daily cVaR at 95%:** {fmt_val(cVaR_95_daily)}")
                 st.write(f"**Daily VaR at 99%:** {fmt_val(VaR_99_daily)}")
-                cvar_99_str = fmt_val(cVaR_99_daily)
-                st.write(f"**Daily cVaR at 99%:** {cvar_99_str}")
+                st.write(f"**Daily cVaR at 99%:** {fmt_val(cVaR_99_daily)}")
 
-                # No regression chart: just show portfolio beta and each instrument's beta
+                # Beta info (no regression chart)
                 st.subheader("📉 Beta to US 10yr Rates")
                 if not np.isnan(portfolio_beta):
                     st.write(f"**Portfolio Beta to {sensitivity_rate}:** {portfolio_beta:.4f}")
                     if instrument_betas:
-                        st.write("**Instrument Betas:**")
+                        st.write("**Instrument Betas to US 10yr Rates:**")
                         for instr, b in instrument_betas.items():
                             beta_str = f"{b:.4f}" if not np.isnan(b) else "N/A"
                             st.write(f"- {instr}: {beta_str}")
@@ -509,7 +484,6 @@ def main():
                 if not risk_contributions_formatted.empty:
                     st.subheader('📄 Detailed Risk Contributions by Instrument')
                     gb_risk = GridOptionsBuilder.from_dataframe(risk_contributions_formatted)
-                    # Show all instruments fully
                     gb_risk.configure_default_column(editable=False, groupable=True)
                     grid_options_risk = gb_risk.build()
 
@@ -534,6 +508,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
