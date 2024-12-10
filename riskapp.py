@@ -581,6 +581,31 @@ def main():
                 risk_contributions_formatted['Position'].notna() & (risk_contributions_formatted['Position'] != 0)
             ]
 
+            # Compute VaR and cVaR before displaying metrics
+            # Use the selected lookback period for VaR calculations
+            price_returns_var = adjusted_price_returns.tail(var_lookback_days)
+
+            # Aggregate positions per instrument
+            positions_per_instrument = expanded_positions_vector.groupby('Instrument').sum()
+
+            # Ensure all instruments are present in the covariance matrix
+            available_instruments_var = positions_per_instrument.index.intersection(price_returns_var.columns)
+            positions_per_instrument = positions_per_instrument.loc[available_instruments_var]
+            price_returns_var = price_returns_var[available_instruments_var]
+
+            # Compute portfolio returns
+            portfolio_returns = price_returns_var.dot(positions_per_instrument) * 100  # Convert returns to bps
+
+            # Compute VaR and cVaR
+            VaR_95_daily = -np.percentile(portfolio_returns, 5)
+            VaR_99_daily = -np.percentile(portfolio_returns, 1)
+
+            cVaR_95_daily = -portfolio_returns[portfolio_returns <= -VaR_95_daily].mean()
+            cVaR_99_daily = -portfolio_returns[portfolio_returns <= -VaR_99_daily].mean()
+
+            # Compute Portfolio Volatility
+            # (Already computed as 'portfolio_volatility')
+
             # Add bar charts to 'Percent Contribution (%)' column using Plotly
             fig_risk_contributions = px.bar(
                 risk_contributions_formatted,
@@ -625,7 +650,7 @@ def main():
             metrics_col3.metric(label="📉 Daily VaR (99%)", value=f"{VaR_99_daily:.2f} bps")
             metrics_col4.metric(label="📈 Daily cVaR (95%)", value=f"{cVaR_95_daily:.2f} bps")
 
-            # Display VaR and cVaR metrics
+            # Display VaR and cVaR metrics in detail
             st.subheader('📈 Value at Risk (VaR) and Conditional VaR (cVaR)')
             st.write(f"**Daily VaR at 95% confidence:** {VaR_95_daily:.2f} bps")
             st.write(f"**Daily cVaR at 95% confidence:** {cVaR_95_daily:.2f} bps")
@@ -713,19 +738,14 @@ def main():
                             font=dict(size=12, color="black")
                         )
 
+                    # Render the scatter plot
                     st.plotly_chart(fig_sensitivity, use_container_width=True)
             else:
                 st.warning(f"⚠️ '{sensitivity_rate}' data not available for sensitivity analysis.")
                 st.write("**Available Columns:**")
                 st.write(price_returns_var.columns.tolist())
 
-            # Display Portfolio Volatility
-            st.subheader('📊 Total Portfolio Volatility')
-            st.write(f"**Total Portfolio Volatility (Annualized):** {portfolio_volatility:.2f} bps")
+    if __name__ == '__main__':
+        main()
 
-        else:
-            st.info('💡 Click "🚀 Run Risk Attribution" to calculate risk metrics.')
-
-if __name__ == '__main__':
-    main()
 
