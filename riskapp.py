@@ -42,14 +42,14 @@ def calculate_returns(df):
     price_returns = returns * -1
     return price_returns
 
-# Reintroduce the original instrument_country dictionary and adjust_time_zones logic
+# Original instrument_country dictionary
 instrument_country = {
     'AU 3Y Future': 'AU',
     'AU 10Y Future': 'AU',
     'US 2Y Future': 'US',
     'US 5Y Future': 'US',
     'US 10Y Future': 'US',
-    # Add more if needed, otherwise they become 'Other'
+    # Add more if needed, fallback to 'Other' if not found
 }
 
 @st.cache_data(show_spinner=False)
@@ -101,6 +101,7 @@ def compute_beta(x_returns, y_returns):
     return cov / var_y
 
 def guess_country_from_instrument_name(name):
+    # A heuristic approach to guess country from instrument name
     country_codes = {
         'AU': 'AU', 'US': 'US', 'DE': 'DE', 'UK': 'UK', 'IT': 'IT',
         'CA': 'CA', 'JP': 'JP', 'CH': 'CH', 'BR': 'BR', 'MX': 'MX',
@@ -117,7 +118,7 @@ def main():
 
     instruments_data = pd.DataFrame({
         "Ticker": [
-            "YM1 Comdty","XM1 Comdty","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty","UXYAFWD Comdty","WNAFWD Comdty","DUAFWD Comdty","OEAFWD Comdty","RXAFWD Comdty","GAFWD Comdty","IKAFWD Comdty","CNAFWD Comdty","JBAFWD Comdty","CCSWNI1 Curncy","ADSW2 Curncy","CDSO2 Curncy","USSW2 Curncy","EUSA2 Curncy","BPSWS2 BGN Curncy","NDSWAP2 BGN Curncy","I39302Y Index","MPSW2B BGN Curncy","MPSWF2B Curncy","SAFR1I2 BGN Curncy","CKSW2 BGN Curncy","PZSW2 BGN Curncy","KWSWNI2 BGN Curncy","CCSWNI2 CMPN Curncy","ADSW5 Curncy","CDSO5 Curncy","USSW5 Curncy","EUSA5 Curncy","BPSWS5 BGN Curncy","NDSWAP5 BGN Curncy","I39305Y Index","MPSW5E Curncy","MPSWF5E Curncy","SASW5 Curncy","CKSW5 Curncy","PZSW5 Curncy","KWSWNI5 Curncy","CCSWNI5 Curncy","JYSO5 Curncy","ADSW10 Curncy","CDSO10 Curncy","USSW10 Curncy","EUSA10 Curncy","BPSWS10 BGN Curncy","NDSWAP10 BGN Curncy","ADSW30 Curncy","CDSW30 Curncy","USSW30 Curncy","EUSA30 Curncy","BPSWS30 BGN Curncy","NDSWAP30 BGN Curncy","JYSO30 Curncy","MPSW10J BGN Curncy","MPSWF10J BGN Curncy","SASW10 Curncy","CKSW10 Curncy","PZSW10 Curncy","KWSWNI10 Curncy","CCSWNI10 Curncy","BPSWIT10 Curncy"
+            "YM1 Comdty","XM1 Comdty","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty","UXYAFWD Comdty","WNAFWD Comdty","DUAFWD Comdty","OEAFWD Comdty","RXAFWD Comdty","GAFWD Comdty","IKAFWD Comdty","CNAFWD Comdty","JBAFWD Comdty","CCSWNI1 Curncy","ADSW2 Curncy","CDSO2 Curncy","USSW2 Curncy","EUSA2 Curncy","BPSWS2 BGN Curncy","NDSWAP2 BGN Curncy","I39302Y Index","MPSW2B BGN Curncy","MPSWF2B Curncy","SAFR1I2 BGN Curncy","CKSW2 BGN Curncy","PZSW2 BGN Curncy","KWSWNI2 BGN Curncy","CCSWNI2 CMPN Curncy","ADSW5 Curncy","CDSO5 Curncy","USSW5 Curncy","EUSA5 Curncy","BPSWS5 BGN Curncy","NDSWAP5 BGN Curncy","I39305Y Index","MPSW5E Curncy","MPSWF5E Curncy","SASW5 Curncy","CKSW5 Curncy","PZSW5 Curncy","KWSWNI5 Curncy","CCSWNI5 Curncy","JYSO5 Curncy","ADSW10 Curncy","CDSW10 Curncy","USSW10 Curncy","EUSA10 Curncy","BPSWS10 BGN Curncy","NDSWAP10 BGN Curncy","ADSW30 Curncy","CDSW30 Curncy","USSW30 Curncy","EUSA30 Curncy","BPSWS30 BGN Curncy","NDSWAP30 BGN Curncy","JYSO30 Curncy","MPSW10J BGN Curncy","MPSWF10J BGN Curncy","SASW10 Curncy","CKSW10 Curncy","PZSW10 Curncy","KWSWNI10 Curncy","CCSWNI10 Curncy","BPSWIT10 Curncy"
         ],
         "Instrument Name": [
             "AU 3Y Future","AU 10Y Future","US 2Y Future","US 5Y Future","US 10Y Future","US 10Y Ultra Future","US 30Y Future","DE 2Y Future","DE 5Y Future","DE 10Y Future","UK 10Y Future","IT 10Y Future","CA 10Y Future","JP 10Y Future","CH 1Y Swap","AU 2Y Swap","CA 2Y Swap","US 2Y Swap","DE 2Y Swap","UK 2Y Swap","NZ 2Y Swap","BR 2Y Swap","MX 2Y Swap","MX 2Y Swap OIS","SA 2Y Swap","CZ 2Y Swap","PO 2Y Swap","SK 2Y Swap","CH 2Y Swap","AU 5Y Swap","CA 5Y Swap","US 5Y Swap","DE 5Y Swap","UK 5Y Swap","NZ 5Y Swap","BR 5Y Swap","MX 5Y Swap","MX 5Y Swap OIS","SA 5Y Swap","CZ 5Y Swap","PO 5Y Swap","SK 5Y Swap","CH 5Y Swap","JP 5Y Swap","AU 10Y Swap","CA 10Y Swap","US 10Y Swap","DE 10Y Swap","UK 10Y Swap","NZ 10Y Swap","AU 30Y Swap","CA 30Y Swap","US 30Y Swap","DE 30Y Swap","UK 30Y Swap","NZ 30Y Swap","JP 30Y Swap","MX 10Y Swap","MX 10Y Swap OIS","SA 10Y Swap","CZ 10Y Swap","PO 10Y Swap","SK 10Y Swap","CH 10Y Swap","UK 10Y Swap Inf"
@@ -144,11 +145,33 @@ def main():
         'Spread': [0.0]*len(em_instruments),
     })
 
+    st.sidebar.header("🔍 Sensitivity Rate Configuration")
+    excel_file = 'historical_data.xlsx'
+    if not os.path.exists(excel_file):
+        st.sidebar.error(f"❌ '{excel_file}' not found.")
+        st.stop()
+
+    raw_df = load_historical_data(excel_file)
+    if raw_df.empty:
+        st.error("No data loaded from Excel.")
+        st.stop()
+
+    available_columns = raw_df.columns.tolist()
+    if 'US 10Y Future' in available_columns:
+        default_index = available_columns.index('US 10Y Future')
+    else:
+        default_index = 0
+    sensitivity_rate = st.sidebar.selectbox(
+        'Select sensitivity instrument:',
+        options=available_columns,
+        index=default_index
+    )
+
     tabs = st.tabs(["📊 Risk Attribution", "📂 Input Positions", "⚙️ Settings"])
 
     with tabs[1]:
         st.header("🔄 Input Positions")
-        st.write("Instrument column is wider now. Columns are editable and resizable.")
+        st.write("Instrument column is now wider. Columns are editable and resizable.")
 
         # DM table
         st.subheader('📈 DM Portfolio Positions')
@@ -223,7 +246,6 @@ def main():
                     st.stop()
 
                 adjusted_price_returns = adjust_time_zones(price_returns, instrument_country)
-
                 if adjusted_price_returns.empty:
                     st.warning("No data after time zone adjustment.")
                     st.stop()
@@ -348,7 +370,7 @@ def main():
                 else:
                     VaR_95_daily, VaR_99_daily, cVaR_95_daily, cVaR_99_daily = (np.nan, np.nan, np.nan, np.nan)
 
-                # Compute Betas (Same logic as before)
+                # Compute Betas
                 portfolio_beta = np.nan
                 instrument_betas = {}
                 if (sensitivity_rate in price_returns_var.columns) and (not positions_per_instrument.empty) and (not price_returns_var.empty):
@@ -432,7 +454,6 @@ def main():
                     else:
                         st.write("No individual instrument betas to display.")
                 else:
-                    # Restore message if no portfolio beta computed
                     st.write(f"No portfolio beta computed. Check {sensitivity_rate} data and positions.")
 
                 if not risk_contributions_formatted.empty:
@@ -463,6 +484,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
