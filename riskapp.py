@@ -18,6 +18,7 @@ def load_historical_data(excel_file):
         df = pd.concat(df_list, axis=1)
         if not pd.api.types.is_datetime64_any_dtype(df.index):
             df.index = pd.to_datetime(df.index)
+        # Remove weekends
         df = df[~df.index.dayofweek.isin([5, 6])]
         return df
     except Exception as e:
@@ -107,12 +108,14 @@ def main():
         ]
     })
 
+    # Extend instrument_country as needed or fallback to 'Other' if not found
     instrument_country = {
         'AU 3Y Future': 'AU',
         'AU 10Y Future': 'AU',
         'US 2Y Future': 'US',
         'US 5Y Future': 'US',
         'US 10Y Future': 'US',
+        # For any instrument not in this dictionary, we'll fallback to 'Other'
     }
 
     st.sidebar.header("🔍 Sensitivity Rate Configuration")
@@ -158,14 +161,14 @@ def main():
 
     with tabs[1]:
         st.header("🔄 Input Positions")
-        st.write("All DM and EM instruments displayed. Instrument and Outright columns are wider. Columns are editable and resizable.")
+        st.write("Instrument and Outright columns are wider. Columns are editable and resizable.")
 
         # DM table
         st.subheader('📈 DM Portfolio Positions')
         gb_dm = GridOptionsBuilder.from_dataframe(default_positions_dm)
         gb_dm.configure_default_column(editable=True, resizable=True)
-        gb_dm.configure_column('Instrument', editable=False, width=400)  # Wider column
-        gb_dm.configure_column('Outright', width=150)  # Wider Outright column
+        gb_dm.configure_column('Instrument', editable=False, width=600)  # Wider instrument column
+        gb_dm.configure_column('Outright', width=200)  # Wider Outright column
         dm_options = gb_dm.build()
         dm_response = AgGrid(
             default_positions_dm,
@@ -181,8 +184,8 @@ def main():
         st.subheader('🌍 EM Portfolio Positions')
         gb_em = GridOptionsBuilder.from_dataframe(default_positions_em)
         gb_em.configure_default_column(editable=True, resizable=True)
-        gb_em.configure_column('Instrument', editable=False, width=400)
-        gb_em.configure_column('Outright', width=150)
+        gb_em.configure_column('Instrument', editable=False, width=600)
+        gb_em.configure_column('Outright', width=200)
         em_options = gb_em.build()
         em_response = AgGrid(
             default_positions_em,
@@ -232,13 +235,11 @@ def main():
                     st.warning("No returns computed.")
                     st.stop()
 
-                instrument_country = {
-                    'AU 3Y Future': 'AU',
-                    'AU 10Y Future': 'AU',
-                    'US 2Y Future': 'US',
-                    'US 5Y Future': 'US',
-                    'US 10Y Future': 'US',
-                }
+                # Instrument-country fallback
+                # If an instrument is not in instrument_country dict, assign 'Other'
+                def get_country(instr):
+                    return instrument_country.get(instr, 'Other')
+
                 adjusted_price_returns = adjust_time_zones(price_returns, instrument_country)
                 if adjusted_price_returns.empty:
                     st.warning("No data after time zone adjustment.")
@@ -274,19 +275,12 @@ def main():
 
                 expanded_positions_vector = expanded_positions_data.set_index(['Instrument', 'Position Type'])['Position']
 
-                # Ensure sensitivity rate included
-                if sensitivity_rate not in expanded_positions_vector.index.get_level_values('Instrument'):
-                    zero_position = pd.Series(
-                        0.0,
-                        index=pd.MultiIndex.from_tuples([(sensitivity_rate, 'Outright')], names=['Instrument', 'Position Type'])
-                    )
-                    expanded_positions_vector = pd.concat([expanded_positions_vector, zero_position])
-
                 if covariance_matrix.empty:
-                    st.warning("Covariance matrix empty. No overlapping instruments.")
+                    st.warning("Covariance matrix empty.")
                     st.stop()
 
                 instruments = expanded_positions_vector.index.get_level_values('Instrument').unique()
+                # Drop instruments not in covariance matrix
                 missing_instruments = [instr for instr in instruments if instr not in covariance_matrix.index]
                 if missing_instruments:
                     drop_labels = [(instr, pt) for instr in missing_instruments for pt in ['Outright', 'Curve', 'Spread']]
@@ -346,6 +340,7 @@ def main():
                 numeric_cols = ['Position', 'Position Stand-alone Volatility', 'Instrument Volatility per 1Y Duration (bps)', 'Contribution to Volatility (bps)', 'Percent Contribution (%)']
                 risk_contributions_formatted[numeric_cols] = risk_contributions_formatted[numeric_cols].round(2)
 
+                # Compute VaR/cVaR
                 price_returns_var = adjusted_price_returns.tail(var_lookback_days)
                 def fmt_val(x):
                     return f"{x:.2f} bps" if (not np.isnan(x) and not np.isinf(x)) else "N/A"
@@ -379,15 +374,23 @@ def main():
                     portfolio_returns_for_beta = price_returns_var.dot(positions_per_instrument) * 100
                     us10yr_returns = price_returns_var[sensitivity_rate] * 100
                     portfolio_beta = compute_beta(portfolio_returns_for_beta, us10yr_returns)
-
                     for instr in positions_per_instrument.index:
-                        instr_return = price_returns_var[instr]*positions_per_instrument[instr]*100
-                        instr_beta = compute_beta(instr_return, us10yr_returns)
-                        # Only show instruments if beta is not NaN and position > 0
-                        if not np.isnan(instr_beta) and positions_per_instrument[instr] != 0:
-                            instrument_betas[instr] = (positions_per_instrument[instr], instr_beta)
+                        pos_val = positions_per_instrument[instr]
+                        if pos_val != 0:  # Only consider instruments with positions
+                            instr_return = price_returns_var[instr]*pos_val*100
+                            instr_beta = compute_beta(instr_return, us10yr_returns)
+                            if not np.isnan(instr_beta):
+                                instrument_betas[instr] = (pos_val, instr_beta)
 
-                # Instrument-level contributions
+                # Add country column to risk_contributions_formatted
+                risk_contributions_formatted['Country'] = risk_contributions_formatted['Instrument'].apply(lambda x: instrument_country.get(x, 'Other'))
+
+                # Group by country and bucket (Position Type)
+                country_bucket = risk_contributions_formatted.groupby(['Country', 'Position Type']).agg({
+                    'Contribution to Volatility (bps)': 'sum'
+                }).reset_index()
+
+                st.subheader("Risk Attribution by Instrument")
                 if not risk_contributions_formatted.empty:
                     fig_instrument_pie = px.pie(
                         risk_contributions_formatted,
@@ -398,25 +401,28 @@ def main():
                     )
                     fig_instrument_pie.update_traces(textposition='inside', textinfo='percent+label')
                     st.plotly_chart(fig_instrument_pie, use_container_width=True)
-
-                    risk_contributions_by_portfolio = risk_contributions_formatted.groupby('Portfolio').agg({
-                        'Contribution to Volatility (bps)': 'sum'
-                    })
-                    if not risk_contributions_by_portfolio.empty and portfolio_volatility > 0:
-                        risk_contributions_by_portfolio['Percent Contribution (%)'] = (risk_contributions_by_portfolio['Contribution to Volatility (bps)'] / portfolio_volatility) * 100
-                        fig_portfolio_pie = px.pie(
-                            risk_contributions_by_portfolio.reset_index(),
-                            names='Portfolio',
-                            values='Contribution to Volatility (bps)',
-                            title='Risk Contributions by Portfolio',
-                            hole=0.4
-                        )
-                        fig_portfolio_pie.update_traces(textposition='inside', textinfo='percent+label')
-                        st.plotly_chart(fig_portfolio_pie, use_container_width=True)
-                    else:
-                        st.warning("No portfolio-level contributions available.")
                 else:
                     st.warning("No risk contributions to display.")
+
+                # Country and bucket chart
+                st.subheader("Risk Attribution by Country and Bucket (Outright, Curve, Spread)")
+                if not country_bucket.empty:
+                    # Create a stacked bar chart by Country and Bucket
+                    fig_country_bucket = px.bar(
+                        country_bucket,
+                        x='Country',
+                        y='Contribution to Volatility (bps)',
+                        color='Position Type',
+                        title='Risk Contributions by Country and Bucket',
+                        barmode='stack'
+                    )
+                    st.plotly_chart(fig_country_bucket, use_container_width=True)
+
+                    # Display table
+                    st.write("Aggregated Risk Contributions by Country and Bucket:")
+                    st.dataframe(country_bucket)
+                else:
+                    st.write("No country/bucket data to display.")
 
                 metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
                 metrics_col1.metric(label="📊 Total Portfolio Volatility", value=fmt_val(portfolio_volatility))
@@ -435,17 +441,16 @@ def main():
                     st.write(f"**Portfolio Beta to {sensitivity_rate}:** {portfolio_beta:.4f}")
                     if instrument_betas:
                         st.write("**Instrument Betas to US 10yr Rates (including Position):**")
-                        # Create a DataFrame for instrument betas
                         beta_data = []
-                        for instr, (pos, b) in instrument_betas.items():
-                            beta_data.append({'Instrument': instr, 'Position': pos, 'Beta': b})
+                        for instr, (pos_val, b) in instrument_betas.items():
+                            beta_data.append({'Instrument': instr, 'Position': pos_val, 'Beta': b})
                         beta_df = pd.DataFrame(beta_data)
                         beta_df['Position'] = beta_df['Position'].round(2)
                         beta_df['Beta'] = beta_df['Beta'].round(4)
-                        st.dataframe(beta_df, width=500)
+                        st.dataframe(beta_df)
 
                         # Footnote on interpretation
-                        st.markdown("*Footnote:* If the US 10-year yield moves by 1bp, the portfolio performance is expected to change by 'Beta' * 1bp. For example, if Beta is 0.5 and US 10-year yields fall by 1bp, the portfolio is expected to rise by approximately 0.5bps.")
+                        st.markdown("*Footnote:* If the US 10-year yield moves by 1bp, the portfolio performance changes by Beta * 1bp. For example, if Beta is 0.5 and US 10-year yields fall by 1bp, the portfolio is expected to rise by ~0.5bps.")
                     else:
                         st.write("No individual instrument betas to display.")
                 else:
