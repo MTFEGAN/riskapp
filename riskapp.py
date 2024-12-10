@@ -6,26 +6,30 @@ from collections import OrderedDict
 import plotly.express as px
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
-# Caching the data loading and processing functions to improve performance
+# Caching data loading and processing functions to improve performance
 @st.cache_data(show_spinner=False)
 def load_historical_data(excel_file):
+    """
+    Load historical data from an Excel file, combining all sheets into a single DataFrame.
+    Drops weekend datapoints.
+    """
     try:
         # Load Excel file
         excel = pd.ExcelFile(excel_file)
-        # Read all sheets and combine them (assuming data is spread across multiple sheets)
+        # Read all sheets and combine them
         df_list = []
         for sheet in excel.sheet_names:
             df_sheet = excel.parse(sheet_name=sheet, index_col='date', parse_dates=True)
             df_list.append(df_sheet)
         df = pd.concat(df_list, axis=1)
-        
-        # **Drop Weekend Datapoints**
+
         # Ensure the index is datetime
         if not pd.api.types.is_datetime64_any_dtype(df.index):
             df.index = pd.to_datetime(df.index)
-        # Filter out weekends (Saturday=5, Sunday=6)
+
+        # Drop weekends (Saturday=5, Sunday=6)
         df = df[~df.index.dayofweek.isin([5, 6])]
-        
+
         return df
     except Exception as e:
         st.error(f"Error reading Excel file: {e}")
@@ -33,6 +37,9 @@ def load_historical_data(excel_file):
 
 @st.cache_data(show_spinner=False)
 def process_yields(df):
+    """
+    Adjust yields for specific instruments if they exist.
+    """
     # Adjust yields for AU 3Y and 10Y futures if they exist
     if 'AU 3Y Future' in df.columns:
         df['AU 3Y Future'] = 100 - df['AU 3Y Future']
@@ -42,34 +49,49 @@ def process_yields(df):
 
 @st.cache_data(show_spinner=False)
 def calculate_returns(df):
+    """
+    Calculate daily yield changes (returns) and adjust for price movements.
+    """
     # Calculate daily yield changes (returns)
     returns = df.diff().dropna()
-    # Correct the sign of returns to reflect price changes
-    # Since bond prices move inversely to yields, we multiply by -1
+    # Correct the sign of returns to reflect price changes (inverse relationship)
     price_returns = returns * -1
     return price_returns
 
 @st.cache_data(show_spinner=False)
 def adjust_time_zones(price_returns, instrument_country):
-    # Adjust returns for time zone differences
+    """
+    Adjust returns for time zone differences by shifting certain instruments.
+    """
+    # Countries that do not require lagging
     non_lag_countries = ['JP', 'AU', 'SK', 'CH']
-    instrument_countries = pd.Series([instrument_country.get(instr, 'Other') for instr in price_returns.columns], index=price_returns.columns)
+    # Map instruments to their respective countries
+    instrument_countries = pd.Series(
+        [instrument_country.get(instr, 'Other') for instr in price_returns.columns],
+        index=price_returns.columns
+    )
 
+    # Instruments to lag (exclude non-lag countries)
     instruments_to_lag = instrument_countries[~instrument_countries.isin(non_lag_countries)].index.tolist()
-    instruments_not_to_lag = instrument_countries[instrument_countries.isin(non_lag_countries)].index.tolist()
 
+    # Create a copy for adjustment
     adjusted_price_returns = price_returns.copy()
 
     if instruments_to_lag:
+        # Shift these instruments by -1 to align with previous day
         adjusted_price_returns[instruments_to_lag] = adjusted_price_returns[instruments_to_lag].shift(-1)
 
     # Drop rows with NaN values resulting from the shift
     adjusted_price_returns = adjusted_price_returns.dropna()
+
     return adjusted_price_returns
 
 @st.cache_data(show_spinner=False)
 def calculate_volatilities(adjusted_price_returns, lookback_days):
-    # Use the selected lookback period for volatility calculations
+    """
+    Calculate annualized volatilities in basis points using the specified lookback period.
+    """
+    # Select the lookback period
     price_returns_vol = adjusted_price_returns.tail(lookback_days)
     # Calculate annualized volatilities in basis points
     volatilities = price_returns_vol.std() * np.sqrt(252) * 100  # Annualized volatility in bps
@@ -77,7 +99,10 @@ def calculate_volatilities(adjusted_price_returns, lookback_days):
 
 @st.cache_data(show_spinner=False)
 def calculate_covariance_matrix(adjusted_price_returns, lookback_days):
-    # Use the selected lookback period for covariance calculations
+    """
+    Calculate the annualized covariance matrix in basis points squared using the specified lookback period.
+    """
+    # Select the lookback period
     price_returns_cov = adjusted_price_returns.tail(lookback_days)
     # Calculate the covariance matrix (annualized) in bps^2
     covariance_matrix = price_returns_cov.cov() * 252 * 10000  # Multiply by 100^2 to convert to bps^2
@@ -87,12 +112,14 @@ def main():
     # Set page configuration to use the wide layout
     st.set_page_config(page_title="📈 Fixed Income Portfolio Risk Attribution", layout="wide")
     st.title('📈 Fixed Income Portfolio Risk Attribution')
-    
-    # Define a consistent color theme
-    primary_color = "#1f77b4"  # You can choose any color you prefer
-    
+
+    # Debugging statement to confirm app initialization
+    st.write("App initialized successfully.")
+
+    # Define a consistent color theme (can be customized)
+    primary_color = "#1f77b4"  # Example color
+
     # Step 1: Define the instruments and their portfolios
-    
     instruments_data = pd.DataFrame({
         'Ticker': [
             'YM1 Comdty', 'XM1 Comdty', 'TUAFWD Comdty', 'FVAFWD Comdty',
@@ -145,11 +172,11 @@ def main():
         ]
     })
 
-    # Define the sensitivity rate column with user selection
+    # Sidebar for Sensitivity Rate Configuration
     st.sidebar.header("🔍 Sensitivity Rate Configuration")
     excel_file = 'historical_data.xlsx'
 
-    # Load historical data to get available columns
+    # Check if the Excel file exists
     if os.path.exists(excel_file):
         raw_df = load_historical_data(excel_file)
         if raw_df is not None:
@@ -169,13 +196,14 @@ def main():
         st.sidebar.error(f"❌ Excel file '{excel_file}' not found. Please ensure it is in the app directory.")
         st.stop()
 
-    # Create tickers_data mapping Ticker to Instrument Name
+    # Mapping Ticker to Instrument Name
     tickers_data = OrderedDict(zip(instruments_data['Ticker'], instruments_data['Instrument Name']))
 
-    # Create a mapping from Instrument Name to Portfolio
+    # Mapping Instrument Name to Portfolio
     instrument_portfolio = dict(zip(instruments_data['Instrument Name'], instruments_data['Portfolio']))
 
-    # Create a mapping from Instrument Name to Country
+    # Mapping Instrument Name to Country
+    # (This should be comprehensive based on your data; adjust as needed)
     instrument_country = {
         'AU 3Y Future': 'AU',
         'AU 10Y Future': 'AU',
@@ -413,12 +441,13 @@ def main():
                 # Step 4: Load Historical Data from the Excel File
                 if not os.path.exists(excel_file):
                     st.error(f"❌ Excel file '{excel_file}' not found. Please ensure it is in the app directory.")
-                    return
+                    st.stop()
 
                 # Load and process historical data
                 df = load_historical_data(excel_file)
                 if df is None:
-                    return  # Error message already displayed
+                    st.error("Failed to load data.")
+                    st.stop()
 
                 df = process_yields(df)
                 price_returns = calculate_returns(df)
@@ -427,11 +456,11 @@ def main():
                 # Check if adjusted_price_returns is empty
                 if adjusted_price_returns.empty:
                     st.warning("⚠️ No data available after adjusting for time zones.")
-                    return
+                    st.stop()
 
                 # Calculate volatilities and covariance matrix
                 volatilities = calculate_volatilities(adjusted_price_returns, volatility_lookback_days)
-                covariance_matrix = calculate_covariance_matrix(adjusted_price_returns, volatility_lookback_days)
+                covariance_matrix = calculate_covariance_matrix(adjusted_price_returns, var_lookback_days)
 
                 # Step 5: Process User Input Positions
 
@@ -463,7 +492,7 @@ def main():
 
                 if expanded_positions_data.empty:
                     st.warning("⚠️ No positions entered. Please enter positions and try again.")
-                    return
+                    st.stop()
 
                 # Create expanded positions vector
                 expanded_positions_vector = expanded_positions_data.set_index(['Instrument', 'Position Type'])['Position']
@@ -507,13 +536,12 @@ def main():
                 covariance_submatrix = covariance_matrix.loc[instruments, instruments]
 
                 # Assign covariance values to the expanded covariance matrix
-                # Vectorized assignment
-                for pos in expanded_index:
-                    instr = pos[0]
-                    if instr in covariance_submatrix.index:
-                        expanded_cov_matrix.loc[pos, :] = covariance_submatrix.loc[instr, instruments]
+                for pos1 in expanded_index:
+                    instr1 = pos1[0]
+                    if instr1 in covariance_submatrix.index:
+                        expanded_cov_matrix.loc[pos1, :] = covariance_submatrix.loc[instr1, instruments]
                     else:
-                        expanded_cov_matrix.loc[pos, :] = 0.0  # Assign zero if instrument missing
+                        expanded_cov_matrix.loc[pos1, :] = 0.0  # Assign zero if instrument missing
 
                 expanded_cov_matrix = expanded_cov_matrix.astype(float)
 
@@ -552,7 +580,7 @@ def main():
                 # Ensure 'Instrument' and 'Position Type' are set correctly
                 if not {'Instrument', 'Position Type'}.issubset(risk_contributions.columns):
                     st.error("⚠️ Positions data is missing 'Instrument' or 'Position Type' columns.")
-                    return
+                    st.stop()
 
                 # Merge to align with expanded_volatilities
                 risk_contributions = risk_contributions.set_index(['Instrument', 'Position Type']).reindex(expanded_positions_vector.index).reset_index()
@@ -742,7 +770,7 @@ def main():
                     st.write("**Available Columns:**")
                     st.write(price_returns_var.columns.tolist())
 
-                # Optional: Display Risk Contributions Table
+                # **Display Risk Contributions Table**
                 st.subheader('📄 Detailed Risk Contributions by Instrument')
                 gb_risk = GridOptionsBuilder.from_dataframe(risk_contributions_formatted)
                 gb_risk.configure_pagination(enabled=True, paginationPageSize=20)
@@ -759,7 +787,7 @@ def main():
                     enable_enterprise_modules=False
                 )
 
-                # Optional: Allow Downloading of Risk Contributions
+                # **Download Button for Risk Contributions**
                 csv = risk_contributions_formatted.to_csv(index=False).encode('utf-8')
                 st.download_button(
                     label="📥 Download Risk Contributions as CSV",
@@ -768,8 +796,9 @@ def main():
                     mime='text/csv',
                 )
 
-    if __name__ == '__main__':
-        main()
+if __name__ == '__main__':
+    main()
+
 
 
 
