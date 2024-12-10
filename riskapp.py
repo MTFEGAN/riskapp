@@ -27,6 +27,7 @@ def load_historical_data(excel_file):
 
 @st.cache_data(show_spinner=False)
 def process_yields(df):
+    # Adjust yields for AU futures if present
     if 'AU 3Y Future' in df.columns:
         df['AU 3Y Future'] = 100 - df['AU 3Y Future']
     if 'AU 10Y Future' in df.columns:
@@ -41,6 +42,7 @@ def calculate_returns(df):
     price_returns = returns * -1
     return price_returns
 
+# Mapping for time zone adjustment
 instrument_country = {
     'AU 3Y Future': 'AU',
     'AU 10Y Future': 'AU',
@@ -110,7 +112,6 @@ def guess_country_from_instrument_name(name):
 
 def main():
     st.title('📈 Fixed Income Portfolio Risk Attribution')
-    st.write("App initialized successfully.")
 
     instruments_data = pd.DataFrame({
         "Ticker": [
@@ -335,41 +336,53 @@ def main():
                      'Instrument Volatility per 1Y Duration (bps)', 'Contribution to Volatility (bps)', 'Percent Contribution (%)', 'Portfolio']
                 ]
                 risk_contributions_formatted = risk_contributions_formatted[
-                    risk_contributions_formatted['Position'].notna() & (risk_contributions_formatted['Position'] != 0)
+                    (risk_contributions_formatted['Position'].notna()) & (risk_contributions_formatted['Position'] != 0)
                 ]
                 numeric_cols = ['Position', 'Position Stand-alone Volatility', 'Instrument Volatility per 1Y Duration (bps)', 'Contribution to Volatility (bps)', 'Percent Contribution (%)']
                 risk_contributions_formatted[numeric_cols] = risk_contributions_formatted[numeric_cols].round(2)
 
-                price_returns_var = adjusted_price_returns.tail(var_lookback_days)
                 def fmt_val(x):
                     return f"{x:.2f} bps" if (not np.isnan(x) and not np.isinf(x)) else "N/A"
 
-                VaR_95_daily, VaR_99_daily, cVaR_95_daily, cVaR_99_daily = (np.nan, np.nan, np.nan, np.nan)
+                # positions_per_instrument for betas
                 positions_per_instrument = expanded_positions_vector.groupby('Instrument').sum()
+
+                # Compute VaR and cVaR
+                VaR_95_daily, VaR_99_daily, cVaR_95_daily, cVaR_99_daily = (np.nan, np.nan, np.nan, np.nan)
+                # For VaR/cVaR we had price_returns_var logic. We can keep that logic or skip if not needed.
+                # It's okay as is. If it doesn't show betas, it's about the betas, not VaR.
+                # Just leave VaR calculation as is or replicate logic:
+                # Let's reuse the full dataset for VaR calculation is not required, user complains about betas only
+                # We keep the previous logic:
+                
+                # We'll just ensure betas come from full adjusted_price_returns
+                # For VaR, we might need var_lookback data:
+                price_returns_var = adjusted_price_returns.tail(var_lookback_days)
                 if not price_returns_var.empty:
                     available_instruments_var = positions_per_instrument.index.intersection(price_returns_var.columns)
                     if not available_instruments_var.empty:
-                        positions_per_instrument = positions_per_instrument.loc[available_instruments_var]
+                        positions_for_var = positions_per_instrument.loc[available_instruments_var]
                         price_returns_var = price_returns_var[available_instruments_var]
                         if not price_returns_var.empty:
-                            portfolio_returns = price_returns_var.dot(positions_per_instrument) * 100
-                            if not portfolio_returns.empty:
-                                VaR_95_daily = -np.percentile(portfolio_returns, 5)
-                                VaR_99_daily = -np.percentile(portfolio_returns, 1)
-                                cVaR_95_daily = -portfolio_returns[portfolio_returns <= -VaR_95_daily].mean() if (portfolio_returns <= -VaR_95_daily).any() else np.nan
-                                cVaR_99_daily = -portfolio_returns[portfolio_returns <= -VaR_99_daily].mean() if (portfolio_returns <= -VaR_99_daily).any() else np.nan
+                            portfolio_returns_var = price_returns_var.dot(positions_for_var) * 100
+                            if not portfolio_returns_var.empty:
+                                VaR_95_daily = -np.percentile(portfolio_returns_var, 5)
+                                VaR_99_daily = -np.percentile(portfolio_returns_var, 1)
+                                cVaR_95_daily = -portfolio_returns_var[portfolio_returns_var <= -VaR_95_daily].mean() if (portfolio_returns_var <= -VaR_95_daily).any() else np.nan
+                                cVaR_99_daily = -portfolio_returns_var[portfolio_returns_var <= -VaR_99_daily].mean() if (portfolio_returns_var <= -VaR_99_daily).any() else np.nan
 
-                # Compute Betas
+                # Compute Betas using full adjusted_price_returns
                 portfolio_beta = np.nan
                 instrument_betas = {}
-                if (sensitivity_rate in price_returns_var.columns) and (not price_returns_var.empty) and (not positions_per_instrument.empty):
-                    portfolio_returns_for_beta = price_returns_var.dot(positions_per_instrument) * 100
-                    us10yr_returns = price_returns_var[sensitivity_rate] * 100
+                if (sensitivity_rate in adjusted_price_returns.columns) and (not adjusted_price_returns.empty) and (not positions_per_instrument.empty):
+                    us10yr_returns = adjusted_price_returns[sensitivity_rate]*100
+                    portfolio_returns_for_beta = adjusted_price_returns[positions_per_instrument.index].dot(positions_per_instrument)*100
                     portfolio_beta = compute_beta(portfolio_returns_for_beta, us10yr_returns)
+
                     for instr in positions_per_instrument.index:
                         pos_val = positions_per_instrument[instr]
-                        if pos_val != 0:
-                            instr_return = price_returns_var[instr]*pos_val*100
+                        if pos_val != 0 and instr in adjusted_price_returns.columns:
+                            instr_return = adjusted_price_returns[instr]*pos_val*100
                             instr_beta = compute_beta(instr_return, us10yr_returns)
                             if not np.isnan(instr_beta):
                                 instrument_betas[instr] = (pos_val, instr_beta)
@@ -421,7 +434,7 @@ def main():
                 st.write(f"**Daily VaR at 99%:** {fmt_val(VaR_99_daily)}")
                 st.write(f"**Daily cVaR at 99%:** {fmt_val(cVaR_99_daily)}")
 
-                # US Beta Section
+                # Beta Section
                 st.subheader("📉 Beta to US 10yr Rates")
                 if not np.isnan(portfolio_beta):
                     st.write(f"**Portfolio Beta to {sensitivity_rate}:** {portfolio_beta:.4f}")
@@ -435,8 +448,7 @@ def main():
                         beta_df['Beta'] = beta_df['Beta'].round(4)
                         st.dataframe(beta_df)
 
-                        # Footnote on interpretation
-                        st.markdown("*Footnote:* If the US 10-year yield moves by 1bp, the portfolio performance changes by Beta × 1bp. For example, if Beta is 0.5 and US 10-year yields fall by 1bp, the portfolio is expected to rise by approximately 0.5bps.")
+                        st.markdown("*Footnote:* If the US 10-year yield moves by 1bp, the portfolio's performance changes by Beta × 1bp. For example, if Beta is 0.5 and US 10-year yields fall by 1bp, the portfolio is expected to rise by ~0.5bps.")
                     else:
                         st.write("No individual instrument betas to display.")
                 else:
@@ -470,6 +482,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
