@@ -27,7 +27,7 @@ def load_historical_data(excel_file):
 
 @st.cache_data(show_spinner=False)
 def process_yields(df):
-    # Convert AU futures
+    # Convert AU futures to yields
     if 'AU 3Y Future' in df.columns:
         df['AU 3Y Future'] = 100 - df['AU 3Y Future']
     if 'AU 10Y Future' in df.columns:
@@ -70,7 +70,7 @@ def calculate_volatilities(adjusted_price_returns, lookback_days):
     price_returns_vol = adjusted_price_returns.tail(lookback_days)
     if price_returns_vol.empty:
         return pd.Series(dtype=float)
-    volatilities = price_returns_vol.std() * np.sqrt(252) * 100
+    volatilities = price_returns_vol.std() * np.sqrt(252)
     return volatilities
 
 @st.cache_data(show_spinner=False)
@@ -80,7 +80,7 @@ def calculate_covariance_matrix(adjusted_price_returns, lookback_days):
     price_returns_cov = adjusted_price_returns.tail(lookback_days)
     if price_returns_cov.empty:
         return pd.DataFrame()
-    covariance_matrix = price_returns_cov.cov() * 252 * 10000
+    covariance_matrix = price_returns_cov.cov() * 252
     return covariance_matrix
 
 def compute_beta(x_returns, y_returns):
@@ -112,16 +112,43 @@ def guess_country_from_instrument_name(name):
 
 def main():
     st.title('📈 Fixed Income Portfolio Risk Attribution')
+    st.write("App initialized successfully.")
 
     instruments_data = pd.DataFrame({
         "Ticker": [
-            "YM1 Comdty","XM1 Comdty","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty","UXYAFWD Comdty","WNAFWD Comdty","DUAFWD Comdty","OEAFWD Comdty","RXAFWD Comdty","GAFWD Comdty","IKAFWD Comdty","CNAFWD Comdty","JBAFWD Comdty","CCSWNI1 Curncy","ADSW2 Curncy","CDSO2 Curncy","USSW2 Curncy","EUSA2 Curncy","BPSWS2 BGN Curncy","NDSWAP2 BGN Curncy","I39302Y Index","MPSW2B BGN Curncy","MPSWF2B Curncy","SAFR1I2 BGN Curncy","CKSW2 BGN Curncy","PZSW2 BGN Curncy","KWSWNI2 BGN Curncy","CCSWNI2 CMPN Curncy","ADSW5 Curncy","CDSO5 Curncy","USSW5 Curncy","EUSA5 Curncy","BPSWS5 BGN Curncy","NDSWAP5 BGN Curncy","I39305Y Index","MPSW5E Curncy","MPSWF5E Curncy","SASW5 Curncy","CKSW5 Curncy","PZSW5 Curncy","KWSWNI5 BGN Curncy","CCSWNI5 Curncy","JYSO5 Curncy","ADSW10 Curncy","CDSW10 Curncy","USSW10 Curncy","EUSA10 Curncy","BPSWS10 BGN Curncy","NDSWAP10 BGN Curncy","ADSW30 Curncy","CDSW30 Curncy","USSW30 Curncy","EUSA30 Curncy","BPSWS30 BGN Curncy","NDSWAP30 BGN Curncy","JYSO30 Curncy","MPSW10J BGN Curncy","MPSWF10J BGN Curncy","SASW10 Curncy","CKSW10 Curncy","PZSW10 Curncy","KWSWNI10 Curncy","CCSWNI10 Curncy","BPSWIT10 Curncy"
+            "YM1 Comdty","XM1 Comdty","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty","UXYAFWD Comdty",
+            "WNAFWD Comdty","DUAFWD Comdty","OEAFWD Comdty","RXAFWD Comdty","GAFWD Comdty","IKAFWD Comdty",
+            "CNAFWD Comdty","JBAFWD Comdty","CCSWNI1 Curncy","ADSW2 Curncy","CDSO2 Curncy","USSW2 Curncy",
+            "EUSA2 Curncy","BPSWS2 BGN Curncy","NDSWAP2 BGN Curncy","I39302Y Index","MPSW2B BGN Curncy",
+            "MPSWF2B Curncy","SAFR1I2 BGN Curncy","CKSW2 BGN Curncy","PZSW2 BGN Curncy","KWSWNI2 BGN Curncy",
+            "CCSWNI2 CMPN Curncy","ADSW5 Curncy","CDSO5 Curncy","USSW5 Curncy","EUSA5 Curncy",
+            "BPSWS5 BGN Curncy","NDSWAP5 BGN Curncy","I39305Y Index","MPSW5E Curncy","MPSWF5E Curncy",
+            "SASW5 Curncy","CKSW5 Curncy","PZSW5 Curncy","KWSWNI5 BGN Curncy","CCSWNI5 Curncy","JYSO5 Curncy",
+            "ADSW10 Curncy","CDSW10 Curncy","USSW10 Curncy","EUSA10 Curncy","BPSWS10 BGN Curncy",
+            "NDSWAP10 BGN Curncy","ADSW30 Curncy","CDSW30 Curncy","USSW30 Curncy","EUSA30 Curncy",
+            "BPSWS30 BGN Curncy","NDSWAP30 BGN Curncy","JYSO30 Curncy","MPSW10J BGN Curncy",
+            "MPSWF10J BGN Curncy","SASW10 Curncy","CKSW10 Curncy","PZSW10 Curncy","KWSWNI10 Curncy",
+            "CCSWNI10 Curncy","BPSWIT10 Curncy"
         ],
         "Instrument Name": [
-            "AU 3Y Future","AU 10Y Future","US 2Y Future","US 5Y Future","US 10Y Future","US 10Y Ultra Future","US 30Y Future","DE 2Y Future","DE 5Y Future","DE 10Y Future","UK 10Y Future","IT 10Y Future","CA 10Y Future","JP 10Y Future","CH 1Y Swap","AU 2Y Swap","CA 2Y Swap","US 2Y Swap","DE 2Y Swap","UK 2Y Swap","NZ 2Y Swap","BR 2Y Swap","MX 2Y Swap","MX 2Y Swap OIS","SA 2Y Swap","CZ 2Y Swap","PO 2Y Swap","SK 2Y Swap","CH 2Y Swap","AU 5Y Swap","CA 5Y Swap","US 5Y Swap","DE 5Y Swap","UK 5Y Swap","NZ 5Y Swap","BR 5Y Swap","MX 5Y Swap","MX 5Y Swap OIS","SA 5Y Swap","CZ 5Y Swap","PO 5Y Swap","SK 5Y Swap","CH 5Y Swap","JP 5Y Swap","AU 10Y Swap","CA 10Y Swap","US 10Y Swap","DE 10Y Swap","UK 10Y Swap","NZ 10Y Swap","AU 30Y Swap","CA 30Y Swap","US 30Y Swap","DE 30Y Swap","UK 30Y Swap","NZ 30Y Swap","JP 30Y Swap","MX 10Y Swap","MX 10Y Swap OIS","SA 10Y Swap","CZ 10Y Swap","PO 10Y Swap","SK 10Y Swap","CH 10Y Swap","UK 10Y Swap Inf"
+            "AU 3Y Future","AU 10Y Future","US 2Y Future","US 5Y Future","US 10Y Future","US 10Y Ultra Future",
+            "US 30Y Future","DE 2Y Future","DE 5Y Future","DE 10Y Future","UK 10Y Future","IT 10Y Future",
+            "CA 10Y Future","JP 10Y Future","CH 1Y Swap","AU 2Y Swap","CA 2Y Swap","US 2Y Swap",
+            "DE 2Y Swap","UK 2Y Swap","NZ 2Y Swap","BR 2Y Swap","MX 2Y Swap","MX 2Y Swap OIS",
+            "SA 2Y Swap","CZ 2Y Swap","PO 2Y Swap","SK 2Y Swap","CH 2Y Swap","AU 5Y Swap",
+            "CA 5Y Swap","US 5Y Swap","DE 5Y Swap","UK 5Y Swap","NZ 5Y Swap","BR 5Y Swap",
+            "MX 5Y Swap","MX 5Y Swap OIS","SA 5Y Swap","CZ 5Y Swap","PO 5Y Swap","SK 5Y Swap",
+            "CH 5Y Swap","JP 5Y Swap","AU 10Y Swap","CA 10Y Swap","US 10Y Swap","DE 10Y Swap",
+            "UK 10Y Swap","NZ 10Y Swap","AU 30Y Swap","CA 30Y Swap","US 30Y Swap","DE 30Y Swap",
+            "UK 30Y Swap","NZ 30Y Swap","JP 30Y Swap","MX 10Y Swap","MX 10Y Swap OIS","SA 10Y Swap",
+            "CZ 10Y Swap","PO 10Y Swap","SK 10Y Swap","CH 10Y Swap","UK 10Y Swap Inf"
         ],
         "Portfolio": [
-            "DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","EM","DM","DM","DM","DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","EM","DM","DM","DM","DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","EM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","DM"
+            "DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","EM","DM",
+            "DM","DM","DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","EM","DM","DM","DM",
+            "DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","EM","DM","DM","DM","DM","DM",
+            "DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","EM","EM","EM","EM","EM","EM",
+            "EM","DM"
         ]
     })
 
@@ -176,6 +203,8 @@ def main():
         gb_dm.configure_default_column(editable=True, resizable=True)
         gb_dm.configure_column('Instrument', editable=False, width=600)
         gb_dm.configure_column('Outright', width=200)
+        gb_dm.configure_column('Curve', width=200)
+        gb_dm.configure_column('Spread', width=200)
         dm_options = gb_dm.build()
         dm_response = AgGrid(
             default_positions_dm,
@@ -193,6 +222,8 @@ def main():
         gb_em.configure_default_column(editable=True, resizable=True)
         gb_em.configure_column('Instrument', editable=False, width=600)
         gb_em.configure_column('Outright', width=200)
+        gb_em.configure_column('Curve', width=200)
+        gb_em.configure_column('Spread', width=200)
         em_options = gb_em.build()
         em_response = AgGrid(
             default_positions_em,
@@ -378,7 +409,7 @@ def main():
                     for instr in positions_per_instrument.index:
                         pos_val = positions_per_instrument[instr]
                         if (pos_val != 0) and (instr in adjusted_price_returns.columns):
-                            instr_return = adjusted_price_returns[instr]*pos_val
+                            instr_return = adjusted_price_returns[instr] * pos_val
                             instr_beta = compute_beta(instr_return, us10yr_returns)
                             if not np.isnan(instr_beta):
                                 instrument_betas[instr] = (pos_val, instr_beta)
@@ -430,7 +461,7 @@ def main():
                 st.write(f"**Daily VaR at 99%:** {fmt_val(VaR_99_daily)}")
                 st.write(f"**Daily cVaR at 99%:** {fmt_val(cVaR_99_daily)}")
 
-                # US Beta Section
+                # Beta Section
                 st.subheader("📉 Beta to US 10yr Rates")
                 if not np.isnan(portfolio_beta):
                     st.write(f"**Portfolio Beta to {sensitivity_rate}:** {portfolio_beta:.4f}")
@@ -455,6 +486,13 @@ def main():
                     gb_risk = GridOptionsBuilder.from_dataframe(risk_contributions_formatted)
                     gb_risk.configure_default_column(editable=False, resizable=True)
                     gb_risk.configure_column('Instrument', width=300)
+                    gb_risk.configure_column('Position Type', width=150)
+                    gb_risk.configure_column('Position', width=100)
+                    gb_risk.configure_column('Position Stand-alone Volatility', width=150)
+                    gb_risk.configure_column('Instrument Volatility per 1Y Duration (bps)', width=250)
+                    gb_risk.configure_column('Contribution to Volatility (bps)', width=200)
+                    gb_risk.configure_column('Percent Contribution (%)', width=150)
+                    gb_risk.configure_column('Portfolio', width=100)
                     risk_grid_options = gb_risk.build()
 
                     AgGrid(
@@ -478,6 +516,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
