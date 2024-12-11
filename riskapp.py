@@ -40,7 +40,7 @@ def adjust_time_zones(df, instrument_country):
 
     adjusted_df = df.copy()
     if instruments_to_lag:
-        adjusted_df[instruments_to_lag] = adjusted_df[instruments_to_lag].shift(-1)
+        adjusted_df[instruments_to_lag] = adjusted_df[instruments_to_lag].shift(1)  # Shift forward by 1 to lag data
     adjusted_df = adjusted_df.dropna()
     return adjusted_df
 
@@ -66,35 +66,36 @@ def fallback_mx_ois_data(daily_changes):
 
     for ois_col, non_ois_col in ois_map.items():
         if ois_col in daily_changes.columns and non_ois_col in daily_changes.columns:
-            if daily_changes[ois_col].isna().all():
-                daily_changes[ois_col] = daily_changes[non_ois_col].copy()
+            daily_changes[ois_col].fillna(daily_changes[non_ois_col], inplace=True)
 
     return daily_changes
 
 def calculate_volatilities(daily_changes, lookback_days):
     """
     Calculate annualized volatility over the specified lookback period.
-    Annualize daily volatility: std * sqrt(252).
+    Annualize daily volatility: std * sqrt(trading_days).
     """
     if daily_changes.empty:
         return pd.Series(dtype=float)
     recent_returns = daily_changes.tail(lookback_days)
     if recent_returns.empty:
         return pd.Series(dtype=float)
-    volatilities = recent_returns.std() * np.sqrt(252)
+    trading_days = len(recent_returns)
+    volatilities = recent_returns.std() * np.sqrt(trading_days)
     return volatilities
 
 def calculate_covariance_matrix(daily_changes, lookback_days):
     """
     Calculate annualized covariance matrix over the specified lookback period.
-    Annualize daily covariance: cov * 252.
+    Annualize daily covariance: cov * trading_days.
     """
     if daily_changes.empty:
         return pd.DataFrame()
     recent_returns = daily_changes.tail(lookback_days)
     if recent_returns.empty:
         return pd.DataFrame()
-    covariance_matrix = recent_returns.cov() * 252
+    trading_days = len(recent_returns)
+    covariance_matrix = recent_returns.cov() * trading_days
     return covariance_matrix
 
 def compute_beta(x_returns, y_returns, lookback_days):
@@ -363,7 +364,7 @@ def main():
                 volatilities = calculate_volatilities(daily_changes, volatility_lookback_days)
                 covariance_matrix = calculate_covariance_matrix(daily_changes, volatility_lookback_days)
 
-                # Beta window also uses volatility_lookback_days
+                # Beta window uses volatility_lookback_days
                 beta_data_window = daily_changes.tail(volatility_lookback_days)
 
                 positions_data_dm = pd.DataFrame(positions_data_dm).astype({'Outright': float, 'Curve': float, 'Spread': float})
@@ -443,7 +444,7 @@ def main():
                 marginal_contributions = expanded_cov_matrix.dot(expanded_positions_vector)
                 contribution_to_variance = expanded_positions_vector * marginal_contributions
                 contribution_to_volatility = contribution_to_variance / portfolio_volatility
-                percent_contribution = (contribution_to_volatility / portfolio_volatility) * 100
+                percent_contribution = (contribution_to_variance / portfolio_variance) * 100  # Corrected to variance
 
                 risk_contributions = expanded_positions_data.copy()
                 risk_contributions = risk_contributions.set_index(['Instrument', 'Position Type']).reindex(expanded_positions_vector.index).reset_index()
@@ -496,7 +497,7 @@ def main():
                         for instr in available_for_beta:
                             pos_val = positions_per_instrument[instr]
                             if pos_val != 0:
-                                instr_return = beta_data_window[instr] * pos_val
+                                instr_return = beta_data_window[instr]
                                 instr_beta = compute_beta(instr_return, us10yr_returns, volatility_lookback_days)
                                 if not np.isnan(instr_beta):
                                     instrument_betas[instr] = (pos_val, instr_beta)
@@ -594,29 +595,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
