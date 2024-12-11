@@ -7,11 +7,12 @@ from st_aggrid import AgGrid, GridOptionsBuilder
 
 st.set_page_config(page_title="📈 Fixed Income Portfolio Risk Attribution", layout="wide")
 
-@st.cache_data(show_spinner=False)
 def load_historical_data(excel_file):
-    # Load historical data from the provided Excel file
-    # Combine all sheets and ensure the index is datetime
-    # Remove weekends from the data
+    """
+    Load historical yield data from the specified Excel file.
+    Combine all sheets and ensure the index is datetime.
+    Remove weekends from the data.
+    """
     try:
         excel = pd.ExcelFile(excel_file)
         df_list = []
@@ -27,11 +28,12 @@ def load_historical_data(excel_file):
         st.error(f"Error reading Excel file: {e}")
         return pd.DataFrame()
 
-@st.cache_data(show_spinner=False)
 def adjust_time_zones(df, instrument_country):
-    # Adjust time zones by shifting instruments from certain countries by one day
-    # Non-lag countries: JP, AU, SK, CH do not shift
-    # All other instruments (e.g. US, DE, UK) get shifted backward by one business day
+    """
+    Adjust time zones by shifting certain instruments by one business day.
+    Non-lag countries: JP, AU, SK, CH (no shift).
+    All other instruments are shifted backward by one day.
+    """
     non_lag_countries = ['JP', 'AU', 'SK', 'CH']
     instrument_countries = pd.Series([instrument_country.get(instr, 'Other') for instr in df.columns], index=df.columns)
     instruments_to_lag = instrument_countries[~instrument_countries.isin(non_lag_countries)].index.tolist()
@@ -42,18 +44,43 @@ def adjust_time_zones(df, instrument_country):
     adjusted_df = adjusted_df.dropna()
     return adjusted_df
 
-@st.cache_data(show_spinner=False)
 def calculate_daily_changes_in_bps(df):
-    # Convert daily yield changes into bps
-    # If yields are in percentage points (e.g., 2.50 = 2.50%),
-    # then a change of 0.01 in yield = 1bp. Thus, multiply differences by 100.
+    """
+    Calculate daily changes in yields and convert to bps.
+    If yields are in percentage points (e.g. 2.50% = 2.50),
+    a 0.01 change in yield = 1bp, so multiply differences by 100.
+    """
     daily_changes = df.diff().dropna() * 100
     return daily_changes
 
-@st.cache_data(show_spinner=False)
+def fallback_mx_ois_data(daily_changes):
+    """
+    If there is no data for 'MX 2Y Swap OIS', 'MX 5Y Swap OIS', 'MX 10Y Swap OIS',
+    fallback to 'MX 2Y Swap', 'MX 5Y Swap', and 'MX 10Y Swap' respectively.
+
+    This checks if OIS columns exist and are entirely NaN (or missing),
+    then replaces them with corresponding non-OIS data.
+    """
+    ois_map = {
+        'MX 2Y Swap OIS': 'MX 2Y Swap',
+        'MX 5Y Swap OIS': 'MX 5Y Swap',
+        'MX 10Y Swap OIS': 'MX 10Y Swap'
+    }
+
+    for ois_col, non_ois_col in ois_map.items():
+        if ois_col in daily_changes.columns and non_ois_col in daily_changes.columns:
+            # Check if OIS column is all NaN or has no data
+            if daily_changes[ois_col].isna().all():
+                # Use non-OIS data
+                daily_changes[ois_col] = daily_changes[non_ois_col].copy()
+
+    return daily_changes
+
 def calculate_volatilities(daily_changes, lookback_days):
-    # Calculate annualized volatility over the specified lookback period in days
-    # Annualize daily volatility: std * sqrt(252)
+    """
+    Calculate annualized volatility over the specified lookback period.
+    Annualize daily volatility: std * sqrt(252).
+    """
     if daily_changes.empty:
         return pd.Series(dtype=float)
     recent_returns = daily_changes.tail(lookback_days)
@@ -62,10 +89,11 @@ def calculate_volatilities(daily_changes, lookback_days):
     volatilities = recent_returns.std() * np.sqrt(252)
     return volatilities
 
-@st.cache_data(show_spinner=False)
 def calculate_covariance_matrix(daily_changes, lookback_days):
-    # Calculate annualized covariance matrix over the specified lookback period in days
-    # Annualize daily covariance: cov * 252
+    """
+    Calculate annualized covariance matrix over the specified lookback period.
+    Annualize daily covariance: cov * 252.
+    """
     if daily_changes.empty:
         return pd.DataFrame()
     recent_returns = daily_changes.tail(lookback_days)
@@ -75,8 +103,10 @@ def calculate_covariance_matrix(daily_changes, lookback_days):
     return covariance_matrix
 
 def compute_beta(x_returns, y_returns):
-    # Compute beta of x_returns relative to y_returns
-    # Beta = Cov(x,y)/Var(y)
+    """
+    Compute beta of x_returns relative to y_returns.
+    Beta = Cov(x, y) / Var(y).
+    """
     if x_returns.empty or y_returns.empty:
         return np.nan
     common_dates = x_returns.index.intersection(y_returns.index)
@@ -93,7 +123,9 @@ def compute_beta(x_returns, y_returns):
     return cov / var_y
 
 def guess_country_from_instrument_name(name):
-    # Guess the country of an instrument from its name
+    """
+    Guess the country of an instrument from its name.
+    """
     country_codes = {
         'AU': 'AU', 'US': 'US', 'DE': 'DE', 'UK': 'UK', 'IT': 'IT',
         'CA': 'CA', 'JP': 'JP', 'CH': 'CH', 'BR': 'BR', 'MX': 'MX',
@@ -177,7 +209,7 @@ def main():
     st.title('📈 Fixed Income Portfolio Risk Attribution')
     st.write("App initialized successfully.")
 
-    # instruments_data defines the ticker, instrument name, and portfolio classification
+    # Instruments data define instrument universe
     instruments_data = pd.DataFrame({
         "Ticker": [
             "GACGB2 Index","GACGB10 Index","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty","UXYAFWD Comdty",
@@ -213,11 +245,11 @@ def main():
         ]
     })
 
-    # Separate DM and EM instruments for positions input
+    # Separate DM and EM instruments
     dm_instruments = instruments_data[instruments_data['Portfolio'] == 'DM']['Instrument Name'].tolist()
     em_instruments = instruments_data[instruments_data['Portfolio'] == 'EM']['Instrument Name'].tolist()
 
-    # Default positions tables for DM and EM
+    # Default positions
     default_positions_dm = pd.DataFrame({
         'Instrument': dm_instruments,
         'Outright': [0.0]*len(dm_instruments),
@@ -232,7 +264,6 @@ def main():
         'Spread': [0.0]*len(em_instruments),
     })
 
-    # Sidebar configuration for selecting the sensitivity instrument
     st.sidebar.header("🔍 Sensitivity Rate Configuration")
     excel_file = 'historical_data.xlsx'
     if not os.path.exists(excel_file):
@@ -244,6 +275,7 @@ def main():
         st.error("No data loaded from Excel.")
         st.stop()
 
+    # Choose the sensitivity instrument
     available_columns = raw_df.columns.tolist()
     default_index = 0
     if 'US 10Y Future' in available_columns:
@@ -258,9 +290,8 @@ def main():
 
     with tabs[1]:
         st.header("🔄 Input Positions")
-        # This section lets the user input their portfolio positions for DM and EM instruments
+        # Input tables for DM and EM portfolios
 
-        # DM portfolio input table
         st.subheader('📈 DM Portfolio Positions')
         gb_dm = GridOptionsBuilder.from_dataframe(default_positions_dm)
         gb_dm.configure_default_column(editable=True, resizable=True)
@@ -275,7 +306,6 @@ def main():
         )
         positions_data_dm = dm_response['data']
 
-        # EM portfolio input table (only if EM instruments exist)
         if len(em_instruments) > 0:
             st.subheader('🌍 EM Portfolio Positions')
             gb_em = GridOptionsBuilder.from_dataframe(default_positions_em)
@@ -295,30 +325,33 @@ def main():
 
     with tabs[2]:
         st.header("⚙️ Configuration Settings")
-        # Here the user selects the lookback windows for volatility and VaR calculations
+        # Updated lookback options as requested:
+        # For volatility: remove 10 years
         volatility_period_options = {
             '📅 1 month (~21 days)': 21,
             '📆 3 months (~63 days)': 63,
             '📅 6 months (~126 days)': 126,
             '🗓️ 1 year (252 days)': 252,
             '📅 3 years (756 days)': 756,
-            '📆 5 years (1260 days)': 1260,
-            '📅 10 years (2520 days)': 2520
+            '📆 5 years (1260 days)': 1260
+            # Removed 10 years (2520 days) from this list
         }
         volatility_period = st.selectbox('Volatility lookback:', list(volatility_period_options.keys()), index=3)
         volatility_lookback_days = volatility_period_options[volatility_period]
 
+        # For VaR: remove 10 and 15 years, add 1 year
         var_period_options = {
-            '📆 5 years (~1260 days)': 1260,
-            '📆 10 years (~2520 days)': 2520,
-            '📆 15 years (~3780 days)': 3780
+            '🗓️ 1 year (252 days)': 252,
+            '📆 5 years (~1260 days)': 1260
+            # Removed 10 years (~2520 days) and 15 years (~3780 days)
+            # Added 1 year (252 days)
         }
         var_period = st.selectbox('VaR lookback:', list(var_period_options.keys()), index=1)
         var_lookback_days = var_period_options[var_period]
 
     with tabs[0]:
         st.header("📊 Risk Attribution Results")
-        # Pressing this button runs the risk attribution calculations
+        # Run the risk attribution calculations when button is clicked
         if st.button('🚀 Run Risk Attribution'):
             with st.spinner('Calculating risk attribution...'):
                 df = load_historical_data(excel_file)
@@ -326,20 +359,23 @@ def main():
                     st.error("No data loaded. Check Excel file.")
                     st.stop()
 
-                # Adjust for time zones
                 df = adjust_time_zones(df, instrument_country)
-
-                # Calculate daily changes in bps
                 daily_changes = calculate_daily_changes_in_bps(df)
+
+                # Apply MX OIS fallback logic
+                daily_changes = fallback_mx_ois_data(daily_changes)
+
                 if daily_changes.empty:
                     st.warning("No daily changes computed.")
                     st.stop()
 
-                # Compute volatilities and covariance using chosen lookbacks
+                # Compute volatility and covariance using the volatility_lookback_days
                 volatilities = calculate_volatilities(daily_changes, volatility_lookback_days)
-                covariance_matrix = calculate_covariance_matrix(daily_changes, var_lookback_days)
+                covariance_matrix = calculate_covariance_matrix(daily_changes, volatility_lookback_days)
 
-                # Process positions data
+                # Note: Beta also uses volatility_lookback_days window
+                beta_data_window = daily_changes.tail(volatility_lookback_days)
+
                 positions_data_dm = pd.DataFrame(positions_data_dm).astype({'Outright': float, 'Curve': float, 'Spread': float})
                 if not positions_data_em.empty:
                     positions_data_em = pd.DataFrame(positions_data_em).astype({'Outright': float, 'Curve': float, 'Spread': float})
@@ -379,7 +415,6 @@ def main():
                 instruments = expanded_positions_vector.index.get_level_values('Instrument').unique()
                 missing_instruments = [instr for instr in instruments if instr not in covariance_matrix.index]
 
-                # Drop any instruments not in covariance matrix
                 if missing_instruments:
                     drop_labels = [(instr, pt) for instr in missing_instruments for pt in ['Outright', 'Curve', 'Spread']]
                     expanded_positions_vector = expanded_positions_vector.drop(labels=drop_labels, errors='ignore')
@@ -393,7 +428,6 @@ def main():
                     st.warning("No valid instruments after filtering.")
                     st.stop()
 
-                # Create an expanded covariance matrix that matches the position index
                 covariance_submatrix = covariance_matrix.loc[valid_instruments, valid_instruments]
                 expanded_cov_matrix = pd.DataFrame(index=expanded_positions_vector.index, columns=expanded_positions_vector.index)
                 for pos1 in expanded_positions_vector.index:
@@ -404,7 +438,6 @@ def main():
                         expanded_cov_matrix.loc[pos1, :] = 0.0
                 expanded_cov_matrix = expanded_cov_matrix.astype(float)
 
-                # Compute portfolio variance and volatility
                 portfolio_variance = np.dot(expanded_positions_vector.values,
                                             np.dot(expanded_cov_matrix.values, expanded_positions_vector.values))
                 if np.isnan(portfolio_variance) or portfolio_variance <= 0:
@@ -415,7 +448,7 @@ def main():
                     st.warning("Volatility is NaN.")
                     st.stop()
 
-                # Compute marginal contributions and risk contributions
+                # Compute contributions to volatility
                 expanded_volatilities = expanded_positions_vector.index.get_level_values('Instrument').map(volatilities).to_series(index=expanded_positions_vector.index)
                 standalone_volatilities = expanded_positions_vector.abs() * expanded_volatilities
                 marginal_contributions = expanded_cov_matrix.dot(expanded_positions_vector)
@@ -442,10 +475,9 @@ def main():
                 risk_contributions_formatted[numeric_cols] = risk_contributions_formatted[numeric_cols].round(2)
 
                 def fmt_val(x):
-                    # Format values as bps or N/A
                     return f"{x:.2f} bps" if (not np.isnan(x) and not np.isinf(x)) else "N/A"
 
-                # VaR/cVaR calculations using var_lookback_days
+                # VaR/cVaR calculations use var_lookback_days
                 VaR_95, VaR_99, cVaR_95, cVaR_99 = (np.nan, np.nan, np.nan, np.nan)
                 price_returns_var = daily_changes.tail(var_lookback_days)
                 positions_per_instrument = expanded_positions_vector.groupby('Instrument').sum()
@@ -462,17 +494,14 @@ def main():
                                 cVaR_95 = -portfolio_returns_var[portfolio_returns_var <= -VaR_95].mean() if (portfolio_returns_var <= -VaR_95).any() else np.nan
                                 cVaR_99 = -portfolio_returns_var[portfolio_returns_var <= -VaR_99].mean() if (portfolio_returns_var <= -VaR_99).any() else np.nan
 
-                # Compute Beta using the same volatility_lookback_days window
-                beta_data_window = daily_changes.tail(volatility_lookback_days)
+                # Compute Beta using volatility_lookback_days window
                 portfolio_beta = np.nan
                 instrument_betas = {}
                 if (sensitivity_rate in beta_data_window.columns) and (not beta_data_window.empty) and (not positions_per_instrument.empty):
-                    # Compute portfolio returns for beta on the chosen lookback window
                     available_for_beta = positions_per_instrument.index.intersection(beta_data_window.columns)
                     if not available_for_beta.empty:
-                        us10yr_returns = beta_data_window[sensitivity_rate]  # daily returns in bps
+                        us10yr_returns = beta_data_window[sensitivity_rate]
                         portfolio_returns_for_beta = beta_data_window[available_for_beta].dot(positions_per_instrument.loc[available_for_beta])
-
                         portfolio_beta = compute_beta(portfolio_returns_for_beta, us10yr_returns)
 
                         for instr in available_for_beta:
@@ -488,7 +517,7 @@ def main():
                     'Contribution to Volatility (bps)': 'sum'
                 }).reset_index()
 
-                # Visualization of risk contributions by instrument
+                # Pie chart by instrument
                 st.subheader("Risk Attribution by Instrument")
                 if not risk_contributions_formatted.empty:
                     fig_instrument_pie = px.pie(
@@ -503,7 +532,7 @@ def main():
                 else:
                     st.warning("No risk contributions to display.")
 
-                # Visualization of risk contributions by country and bucket as a pie chart
+                # Pie chart by country and bucket
                 st.subheader("Risk Attribution by Country and Bucket (Outright, Curve, Spread)")
                 if not country_bucket.empty:
                     country_bucket['Label'] = country_bucket['Country'] + " - " + country_bucket['Position Type']
@@ -521,7 +550,7 @@ def main():
                 else:
                     st.write("No country/bucket data to display.")
 
-                # Display key metrics: total volatility, VaR, cVaR
+                # Display metrics
                 metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
                 metrics_col1.metric(label="📊 Total Portfolio Volatility", value=fmt_val(portfolio_volatility))
                 metrics_col2.metric(label="📉 Daily VaR (95%)", value=fmt_val(VaR_95))
@@ -534,7 +563,6 @@ def main():
                 st.write(f"**Daily VaR at 99%:** {fmt_val(VaR_99)}")
                 st.write(f"**Daily cVaR at 99%:** {fmt_val(cVaR_99)}")
 
-                # Display Beta results
                 st.subheader("📉 Beta to US 10yr Rates (Daily Basis)")
                 if not np.isnan(portfolio_beta):
                     st.write(f"**Portfolio Beta to {sensitivity_rate} (Daily):** {portfolio_beta:.4f}")
@@ -547,7 +575,7 @@ def main():
                         beta_df['Position'] = beta_df['Position'].round(2)
                         beta_df['Beta'] = beta_df['Beta'].round(4)
                         st.dataframe(beta_df)
-                        st.markdown("*Footnote:* If the US 10-year yield moves by 1bp in a day, the portfolio changes approximately Beta × 1bp in that day.")
+                        st.markdown("*Footnote:* If the US 10-year yield moves by 1bp in a day, the portfolio changes by approximately Beta × 1bp in that day.")
                     else:
                         st.write("No individual instrument betas to display.")
                 else:
@@ -581,6 +609,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
