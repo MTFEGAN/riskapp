@@ -41,8 +41,8 @@ def adjust_time_zones(df, instrument_country):
 
 @st.cache_data(show_spinner=False)
 def calculate_daily_changes_in_bps(df):
-    # If yields are in percentage points (0.01 = 1%), then 1bp = 0.0001
-    # Thus, difference * 10000 = difference in bps
+    # Yields are in percentage points. A 0.01 change = 1bp
+    # Therefore, difference * 100 = difference in bps
     daily_changes = df.diff().dropna() * 100
     return daily_changes
 
@@ -95,13 +95,73 @@ def guess_country_from_instrument_name(name):
             return country_codes[code]
     return 'Other'
 
+# Comprehensive instrument-country mapping based on instrument name:
 instrument_country = {
-    'GACGB2 Index': 'AU',
-    'GACGB10 Index': 'AU',
-    # Add other instruments and mappings as needed
-    'US 2Y Future': 'US',
-    'US 5Y Future': 'US',
-    'US 10Y Future': 'US',
+    "AU 3Y Future": "AU",
+    "AU 10Y Future": "AU",
+    "US 2Y Future": "US",
+    "US 5Y Future": "US",
+    "US 10Y Future": "US",
+    "US 10Y Ultra Future": "US",
+    "US 30Y Future": "US",
+    "DE 2Y Future": "DE",
+    "DE 5Y Future": "DE",
+    "DE 10Y Future": "DE",
+    "UK 10Y Future": "UK",
+    "IT 10Y Future": "IT",
+    "CA 10Y Future": "CA",
+    "JP 10Y Future": "JP",
+    "CH 1Y Swap": "CH",
+    "AU 2Y Swap": "AU",
+    "CA 2Y Swap": "CA",
+    "US 2Y Swap": "US",
+    "DE 2Y Swap": "DE",
+    "UK 2Y Swap": "UK",
+    "NZ 2Y Swap": "NZ",
+    "BR 2Y Swap": "BR",
+    "MX 2Y Swap": "MX",
+    "MX 2Y Swap OIS": "MX",
+    "SA 2Y Swap": "SA",
+    "CZ 2Y Swap": "CZ",
+    "PO 2Y Swap": "PO",
+    "SK 2Y Swap": "SK",
+    "CH 2Y Swap": "CH",
+    "AU 5Y Swap": "AU",
+    "CA 5Y Swap": "CA",
+    "US 5Y Swap": "US",
+    "DE 5Y Swap": "DE",
+    "UK 5Y Swap": "UK",
+    "NZ 5Y Swap": "NZ",
+    "BR 5Y Swap": "BR",
+    "MX 5Y Swap": "MX",
+    "MX 5Y Swap OIS": "MX",
+    "SA 5Y Swap": "SA",
+    "CZ 5Y Swap": "CZ",
+    "PO 5Y Swap": "PO",
+    "SK 5Y Swap": "SK",
+    "CH 5Y Swap": "CH",
+    "JP 5Y Swap": "JP",
+    "AU 10Y Swap": "AU",
+    "CA 10Y Swap": "CA",
+    "US 10Y Swap": "US",
+    "DE 10Y Swap": "DE",
+    "UK 10Y Swap": "UK",
+    "NZ 10Y Swap": "NZ",
+    "AU 30Y Swap": "AU",
+    "CA 30Y Swap": "CA",
+    "US 30Y Swap": "US",
+    "DE 30Y Swap": "DE",
+    "UK 30Y Swap": "UK",
+    "NZ 30Y Swap": "NZ",
+    "JP 30Y Swap": "JP",
+    "MX 10Y Swap": "MX",
+    "MX 10Y Swap OIS": "MX",
+    "SA 10Y Swap": "SA",
+    "CZ 10Y Swap": "CZ",
+    "PO 10Y Swap": "PO",
+    "SK 10Y Swap": "SK",
+    "CH 10Y Swap": "CH",
+    "UK 10Y Swap Inf": "UK"
 }
 
 def main():
@@ -121,8 +181,8 @@ def main():
             "PZSW5 Curncy","KWSWNI5 Curncy","CCSWNI5 Curncy","JYSO5 Curncy","ADSW10 Curncy","CDSW10 Curncy",
             "USSW10 Curncy","EUSA10 Curncy","BPSWS10 BGN Curncy","NDSWAP10 BGN Curncy","ADSW30 Curncy",
             "CDSW30 Curncy","USSW30 Curncy","EUSA30 Curncy","BPSWS30 BGN Curncy","NDSWAP30 BGN Curncy",
-            "JYSO30 Curncy","MPSW10J BGN Curncy","MPSWF10J BGN Curncy","SASW10 Curncy","CKSW10 Curncy",
-            "PZSW10 Curncy","KWSWNI10 Curncy","CCSWNI10 Curncy","BPSWIT10 Curncy"
+            "JYSO30 Curncy","MPSW10J BGN Curncy","MPSWF10J BGN Curncy","SASW10 Curncy","CKSW10 BGN Curncy",
+            "PZSW10 BGN Curncy","KWSWNI10 BGN Curncy","CCSWNI10 Curncy","BPSWIT10 Curncy"
         ],
         "Instrument Name": [
             "AU 3Y Future","AU 10Y Future","US 2Y Future","US 5Y Future","US 10Y Future","US 10Y Ultra Future",
@@ -186,6 +246,8 @@ def main():
 
     with tabs[1]:
         st.header("🔄 Input Positions")
+
+        # DM table
         st.subheader('📈 DM Portfolio Positions')
         gb_dm = GridOptionsBuilder.from_dataframe(default_positions_dm)
         gb_dm.configure_default_column(editable=True, resizable=True)
@@ -219,8 +281,7 @@ def main():
 
     with tabs[2]:
         st.header("⚙️ Configuration Settings")
-        # Daily lookbacks (approx):
-        # 1 month ~21 days, 3 months ~63 days, 6 months ~126 days, 1 year ~252 days, etc.
+        # Daily lookbacks
         volatility_period_options = {
             '📅 1 month (~21 days)': 21,
             '📆 3 months (~63 days)': 63,
@@ -252,8 +313,6 @@ def main():
                     st.stop()
 
                 df = adjust_time_zones(df, instrument_country)
-
-                # Now using daily changes directly
                 daily_changes = calculate_daily_changes_in_bps(df)
                 if daily_changes.empty:
                     st.warning("No daily changes computed.")
@@ -415,16 +474,21 @@ def main():
                     st.warning("No risk contributions to display.")
 
                 st.subheader("Risk Attribution by Country and Bucket (Outright, Curve, Spread)")
+
                 if not country_bucket.empty:
-                    fig_country_bucket = px.bar(
+                    # Combine Country and Position Type into a single label
+                    country_bucket['Label'] = country_bucket['Country'] + " - " + country_bucket['Position Type']
+
+                    fig_country_pie = px.pie(
                         country_bucket,
-                        x='Country',
-                        y='Contribution to Volatility (bps)',
-                        color='Position Type',
+                        names='Label',
+                        values='Contribution to Volatility (bps)',
                         title='Risk Contributions by Country and Bucket',
-                        barmode='stack'
+                        hole=0.4
                     )
-                    st.plotly_chart(fig_country_bucket, use_container_width=True)
+                    fig_country_pie.update_traces(textposition='inside', textinfo='percent+label')
+                    st.plotly_chart(fig_country_pie, use_container_width=True)
+
                     st.write("Aggregated Risk Contributions by Country and Bucket:")
                     st.dataframe(country_bucket)
                 else:
