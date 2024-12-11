@@ -32,7 +32,7 @@ def adjust_time_zones(df, instrument_country):
     """
     Adjust time zones by shifting certain instruments by one business day.
     Non-lag countries: JP, AU, SK, CH (no shift).
-    All other instruments are shifted backward by one day.
+    All other instruments are shifted forward by one day to lag data.
     """
     non_lag_countries = ['JP', 'AU', 'SK', 'CH']
     instrument_countries = pd.Series([instrument_country.get(instr, 'Other') for instr in df.columns], index=df.columns)
@@ -73,29 +73,27 @@ def fallback_mx_ois_data(daily_changes):
 def calculate_volatilities(daily_changes, lookback_days):
     """
     Calculate annualized volatility over the specified lookback period.
-    Annualize daily volatility: std * sqrt(trading_days).
+    Annualize daily volatility: std * sqrt(252).
     """
     if daily_changes.empty:
         return pd.Series(dtype=float)
     recent_returns = daily_changes.tail(lookback_days)
     if recent_returns.empty:
         return pd.Series(dtype=float)
-    trading_days = len(recent_returns)
-    volatilities = recent_returns.std() * np.sqrt(trading_days)
+    volatilities = recent_returns.std() * np.sqrt(252)  # Fixed annualization factor
     return volatilities
 
 def calculate_covariance_matrix(daily_changes, lookback_days):
     """
     Calculate annualized covariance matrix over the specified lookback period.
-    Annualize daily covariance: cov * trading_days.
+    Annualize daily covariance: cov * 252.
     """
     if daily_changes.empty:
         return pd.DataFrame()
     recent_returns = daily_changes.tail(lookback_days)
     if recent_returns.empty:
         return pd.DataFrame()
-    trading_days = len(recent_returns)
-    covariance_matrix = recent_returns.cov() * trading_days
+    covariance_matrix = recent_returns.cov() * 252  # Fixed annualization factor
     return covariance_matrix
 
 def compute_beta(x_returns, y_returns, lookback_days):
