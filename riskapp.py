@@ -5,7 +5,7 @@ import os
 import plotly.express as px
 from st_aggrid import AgGrid, GridOptionsBuilder
 
-st.set_page_config(page_title="📈 Fixed Income Portfolio Risk Attribution", layout="wide")
+st.set_page_config(page_title="📈 BMIX Portfolio Risk Attribution", layout="wide")
 
 def load_historical_data(excel_file):
     """
