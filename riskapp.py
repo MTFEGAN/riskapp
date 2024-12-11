@@ -207,7 +207,7 @@ instrument_country = {
 }
 
 def main():
-    st.title('📈 Fixed Income Portfolio Risk Attribution')
+    st.title('📈 BMIX Portfolio Risk Attribution')
     st.write("App initialized successfully.")
 
     instruments_data = pd.DataFrame({
