@@ -43,7 +43,7 @@ def adjust_time_zones(df, instrument_country):
 def calculate_daily_changes_in_bps(df):
     # If yields are in percentage points (0.01 = 1%), then 1bp = 0.0001
     # Thus, difference * 10000 = difference in bps
-    daily_changes = df.diff().dropna() * 10000
+    daily_changes = df.diff().dropna() * 100
     return daily_changes
 
 @st.cache_data(show_spinner=False)
