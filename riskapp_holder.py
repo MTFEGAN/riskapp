@@ -100,6 +100,8 @@ def compute_beta(x_returns, y_returns, lookback_days):
     """
     Compute beta of x_returns relative to y_returns using the specified lookback_days window.
     Beta = Cov(x, y) / Var(y).
+
+    This function takes the intersection of dates and then only considers the last 'lookback_days' rows.
     """
     if x_returns.empty or y_returns.empty:
         return np.nan
@@ -319,6 +321,8 @@ def main():
 
     with tabs[2]:
         st.header("⚙️ Configuration Settings")
+        # Updated lookback options: no 10 years for volatility,
+        # and for VaR remove 10 and 15 years, add 1 year.
         volatility_period_options = {
             '📅 1 month (~21 days)': 21,
             '📆 3 months (~63 days)': 63,
@@ -438,7 +442,7 @@ def main():
                 marginal_contributions = expanded_cov_matrix.dot(expanded_positions_vector)
                 contribution_to_variance = expanded_positions_vector * marginal_contributions
                 contribution_to_volatility = contribution_to_variance / portfolio_volatility
-                percent_contribution = (contribution_to_variance / portfolio_variance) * 100
+                percent_contribution = (contribution_to_variance / portfolio_variance) * 100  # Corrected to variance
 
                 risk_contributions = expanded_positions_data.copy()
                 risk_contributions = risk_contributions.set_index(['Instrument', 'Position Type']).reindex(expanded_positions_vector.index).reset_index()
@@ -455,11 +459,7 @@ def main():
                 risk_contributions_formatted = risk_contributions_formatted[
                     (risk_contributions_formatted['Position'].notna()) & (risk_contributions_formatted['Position'] != 0)
                 ]
-                numeric_cols = [
-                    'Position', 'Position Stand-alone Volatility',
-                    'Instrument Volatility per 1Y Duration (bps)',
-                    'Contribution to Volatility (bps)', 'Percent Contribution (%)'
-                ]
+                numeric_cols = ['Position', 'Position Stand-alone Volatility', 'Instrument Volatility per 1Y Duration (bps)', 'Contribution to Volatility (bps)', 'Percent Contribution (%)']
                 risk_contributions_formatted[numeric_cols] = risk_contributions_formatted[numeric_cols].round(2)
 
                 def fmt_val(x):
@@ -484,25 +484,14 @@ def main():
 
                 # Compute Beta using volatility_lookback_days
                 portfolio_beta = np.nan
-                portfolio_r2 = np.nan  # <-- Added
                 instrument_betas = {}
                 if (sensitivity_rate in beta_data_window.columns) and (not beta_data_window.empty) and (not positions_per_instrument.empty):
                     available_for_beta = positions_per_instrument.index.intersection(beta_data_window.columns)
                     if not available_for_beta.empty:
                         us10yr_returns = beta_data_window[sensitivity_rate]
                         portfolio_returns_for_beta = beta_data_window[available_for_beta].dot(positions_per_instrument.loc[available_for_beta])
-                        # ---- Compute Portfolio Beta:
                         portfolio_beta = compute_beta(portfolio_returns_for_beta, us10yr_returns, volatility_lookback_days)
 
-                        # ---- Compute Portfolio R²: (correlation^2)
-                        common_dates = portfolio_returns_for_beta.index.intersection(us10yr_returns.index)
-                        if len(common_dates) > 1:
-                            pvals = portfolio_returns_for_beta.loc[common_dates]
-                            uvals = us10yr_returns.loc[common_dates]
-                            corr = np.corrcoef(pvals, uvals)[0, 1]             # <-- Added
-                            portfolio_r2 = corr**2                              # <-- Added
-
-                        # ---- Compute individual instrument betas (and you could also compute their R² if desired):
                         for instr in available_for_beta:
                             pos_val = positions_per_instrument[instr]
                             if pos_val != 0:
@@ -559,11 +548,9 @@ def main():
                 st.write(f"**Daily VaR at 99%:** {fmt_val(VaR_99)}")
                 st.write(f"**Daily cVaR at 99%:** {fmt_val(cVaR_99)}")
 
-                # ---- Display Portfolio Beta and R²
                 st.subheader("📉 Beta to US 10yr Rates (Daily Basis)")
                 if not np.isnan(portfolio_beta):
                     st.write(f"**Portfolio Beta to {sensitivity_rate} (Daily):** {portfolio_beta:.4f}")
-                    st.write(f"**Portfolio R² with {sensitivity_rate} (Daily):** {portfolio_r2:.4f}")  # <-- Added
                     if instrument_betas:
                         st.write("**Instrument Betas to US 10yr Rates (including Position, Daily):**")
                         beta_data = []
