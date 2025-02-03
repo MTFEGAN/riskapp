@@ -40,7 +40,8 @@ def adjust_time_zones(df, instrument_country):
 
     adjusted_df = df.copy()
     if instruments_to_lag:
-        adjusted_df[instruments_to_lag] = adjusted_df[instruments_to_lag].shift(1)  # shift forward by 1 day
+        # Shift forward by 1 day to lag data
+        adjusted_df[instruments_to_lag] = adjusted_df[instruments_to_lag].shift(1)
     adjusted_df = adjusted_df.dropna()
     return adjusted_df
 
@@ -55,7 +56,11 @@ def calculate_daily_changes_in_bps(df):
 
 def fallback_mx_ois_data(daily_changes):
     """
-    If no data for MX OIS columns, fallback to non-OIS columns.
+    If there is no data for 'MX 2Y Swap OIS', 'MX 5Y Swap OIS', 'MX 10Y Swap OIS',
+    fallback to 'MX 2Y Swap', 'MX 5Y Swap', and 'MX 10Y Swap' respectively.
+    
+    Avoid chained-assignment warnings by assigning back to the column instead
+    of fillna(..., inplace=True).
     """
     ois_map = {
         'MX 2Y Swap OIS': 'MX 2Y Swap',
@@ -65,7 +70,6 @@ def fallback_mx_ois_data(daily_changes):
 
     for ois_col, non_ois_col in ois_map.items():
         if ois_col in daily_changes.columns and non_ois_col in daily_changes.columns:
-            # Avoid chaining: use assignment to a temporary df or pass a dict.
             daily_changes[ois_col] = daily_changes[ois_col].fillna(daily_changes[non_ois_col])
 
     return daily_changes
@@ -135,26 +139,72 @@ def guess_country_from_instrument_name(name):
             return country_codes[code]
     return 'Other'
 
+# Comprehensive instrument-country mapping
 instrument_country = {
-    "AU 3Y Future": "AU", "AU 10Y Future": "AU",
-    "US 2Y Future": "US", "US 5Y Future": "US", "US 10Y Future": "US",
-    "US 10Y Ultra Future": "US", "US 30Y Future": "US",
-    "DE 2Y Future": "DE", "DE 5Y Future": "DE", "DE 10Y Future": "DE",
-    "UK 10Y Future": "UK", "IT 10Y Future": "IT", "CA 10Y Future": "CA", "JP 10Y Future": "JP",
-    "CH 1Y Swap": "CH", "AU 2Y Swap": "AU", "CA 2Y Swap": "CA", "US 2Y Swap": "US",
-    "DE 2Y Swap": "DE", "UK 2Y Swap": "UK", "NZ 2Y Swap": "NZ", "BR 2Y Swap": "BR",
-    "MX 2Y Swap": "MX", "MX 2Y Swap OIS": "MX", "SA 2Y Swap": "SA", "CZ 2Y Swap": "CZ",
-    "PO 2Y Swap": "PO", "SK 2Y Swap": "SK", "CH 2Y Swap": "CH",
-    "AU 5Y Swap": "AU", "CA 5Y Swap": "CA", "US 5Y Swap": "US",
-    "DE 5Y Swap": "DE", "UK 5Y Swap": "UK", "NZ 5Y Swap": "NZ", "BR 5Y Swap": "BR",
-    "MX 5Y Swap": "MX", "MX 5Y Swap OIS": "MX", "SA 5Y Swap": "SA", "CZ 5Y Swap": "CZ",
-    "PO 5Y Swap": "PO", "SK 5Y Swap": "SK", "CH 5Y Swap": "CH", "JP 5Y Swap": "JP",
-    "AU 10Y Swap": "AU", "CA 10Y Swap": "CA", "US 10Y Swap": "US",
-    "DE 10Y Swap": "DE", "UK 10Y Swap": "UK", "NZ 10Y Swap": "NZ",
-    "AU 30Y Swap": "AU", "CA 30Y Swap": "CA", "US 30Y Swap": "US",
-    "DE 30Y Swap": "DE", "UK 30Y Swap": "UK", "NZ 30Y Swap": "NZ", "JP 30Y Swap": "JP",
-    "MX 10Y Swap": "MX", "MX 10Y Swap OIS": "MX", "SA 10Y Swap": "SA",
-    "CZ 10Y Swap": "CZ", "PO 10Y Swap": "PO", "SK 10Y Swap": "SK", "CH 10Y Swap": "CH",
+    "AU 3Y Future": "AU",
+    "AU 10Y Future": "AU",
+    "US 2Y Future": "US",
+    "US 5Y Future": "US",
+    "US 10Y Future": "US",
+    "US 10Y Ultra Future": "US",
+    "US 30Y Future": "US",
+    "DE 2Y Future": "DE",
+    "DE 5Y Future": "DE",
+    "DE 10Y Future": "DE",
+    "UK 10Y Future": "UK",
+    "IT 10Y Future": "IT",
+    "CA 10Y Future": "CA",
+    "JP 10Y Future": "JP",
+    "CH 1Y Swap": "CH",
+    "AU 2Y Swap": "AU",
+    "CA 2Y Swap": "CA",
+    "US 2Y Swap": "US",
+    "DE 2Y Swap": "DE",
+    "UK 2Y Swap": "UK",
+    "NZ 2Y Swap": "NZ",
+    "BR 2Y Swap": "BR",
+    "MX 2Y Swap": "MX",
+    "MX 2Y Swap OIS": "MX",
+    "SA 2Y Swap": "SA",
+    "CZ 2Y Swap": "CZ",
+    "PO 2Y Swap": "PO",
+    "SK 2Y Swap": "SK",
+    "CH 2Y Swap": "CH",
+    "AU 5Y Swap": "AU",
+    "CA 5Y Swap": "CA",
+    "US 5Y Swap": "US",
+    "DE 5Y Swap": "DE",
+    "UK 5Y Swap": "UK",
+    "NZ 5Y Swap": "NZ",
+    "BR 5Y Swap": "BR",
+    "MX 5Y Swap": "MX",
+    "MX 5Y Swap OIS": "MX",
+    "SA 5Y Swap": "SA",
+    "CZ 5Y Swap": "CZ",
+    "PO 5Y Swap": "PO",
+    "SK 5Y Swap": "SK",
+    "CH 5Y Swap": "CH",
+    "JP 5Y Swap": "JP",
+    "AU 10Y Swap": "AU",
+    "CA 10Y Swap": "CA",
+    "US 10Y Swap": "US",
+    "DE 10Y Swap": "DE",
+    "UK 10Y Swap": "UK",
+    "NZ 10Y Swap": "NZ",
+    "AU 30Y Swap": "AU",
+    "CA 30Y Swap": "CA",
+    "US 30Y Swap": "US",
+    "DE 30Y Swap": "DE",
+    "UK 30Y Swap": "UK",
+    "NZ 30Y Swap": "NZ",
+    "JP 30Y Swap": "JP",
+    "MX 10Y Swap": "MX",
+    "MX 10Y Swap OIS": "MX",
+    "SA 10Y Swap": "SA",
+    "CZ 10Y Swap": "CZ",
+    "PO 10Y Swap": "PO",
+    "SK 10Y Swap": "SK",
+    "CH 10Y Swap": "CH",
     "UK 10Y Swap Inf": "UK"
 }
 
@@ -162,9 +212,57 @@ def main():
     st.title('📈 BMIX Portfolio Risk Attribution')
     st.write("App initialized successfully.")
 
-    # ...<SAME AS YOUR CODE>... Loading instruments_data, building default_positions_dm/em, etc.
+    instruments_data = pd.DataFrame({
+        "Ticker": [
+            "GACGB2 Index","GACGB10 Index","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty","UXYAFWD Comdty",
+            "WNAFWD Comdty","DUAFWD Comdty","OEAFWD Comdty","RXAFWD Comdty","GAFWD Comdty","IKAFWD Comdty",
+            "CNAFWD Comdty","JBAFWD Comdty","CCSWNI1 Curncy","ADSW2 Curncy","CDSO2 Curncy","USSW2 Curncy",
+            "EUSA2 Curncy","BPSWS2 BGN Curncy","NDSWAP2 BGN Curncy","I39302Y Index","MPSW2B BGN Curncy",
+            "MPSWF2B Curncy","SAFR1I2 BGN Curncy","CKSW2 BGN Curncy","PZSW2 BGN Curncy","KWSWNI2 BGN Curncy",
+            "CCSWNI2 CMPN Curncy","ADSW5 Curncy","CDSO5 Curncy","USSW5 Curncy","EUSA5 Curncy","BPSWS5 BGN Curncy",
+            "NDSWAP5 BGN Curncy","I39305Y Index","MPSW5E Curncy","MPSWF5E Curncy","SASW5 Curncy","CKSW5 Curncy",
+            "PZSW5 Curncy","KWSWNI5 Curncy","CCSWNI5 Curncy","JYSO5 Curncy","ADSW10 Curncy","CDSW10 Curncy",
+            "USSW10 Curncy","EUSA10 Curncy","BPSWS10 BGN Curncy","NDSWAP10 BGN Curncy","ADSW30 Curncy",
+            "CDSW30 Curncy","USSW30 Curncy","EUSA30 Curncy","BPSWS30 BGN Curncy","NDSWAP30 BGN Curncy",
+            "JYSO30 Curncy","MPSW10J BGN Curncy","MPSWF10J BGN Curncy","SASW10 Curncy","CKSW10 BGN Curncy",
+            "PZSW10 BGN Curncy","KWSWNI10 BGN Curncy","CCSWNI10 Curncy","BPSWIT10 Curncy"
+        ],
+        "Instrument Name": [
+            "AU 3Y Future","AU 10Y Future","US 2Y Future","US 5Y Future","US 10Y Future","US 10Y Ultra Future",
+            "US 30Y Future","DE 2Y Future","DE 5Y Future","DE 10Y Future","UK 10Y Future","IT 10Y Future",
+            "CA 10Y Future","JP 10Y Future","CH 1Y Swap","AU 2Y Swap","CA 2Y Swap","US 2Y Swap","DE 2Y Swap",
+            "UK 2Y Swap","NZ 2Y Swap","BR 2Y Swap","MX 2Y Swap","MX 2Y Swap OIS","SA 2Y Swap","CZ 2Y Swap",
+            "PO 2Y Swap","SK 2Y Swap","CH 2Y Swap","AU 5Y Swap","CA 5Y Swap","US 5Y Swap","DE 5Y Swap","UK 5Y Swap",
+            "NZ 5Y Swap","BR 5Y Swap","MX 5Y Swap","MX 5Y Swap OIS","SA 5Y Swap","CZ 5Y Swap","PO 5Y Swap",
+            "SK 5Y Swap","CH 5Y Swap","JP 5Y Swap","AU 10Y Swap","CA 10Y Swap","US 10Y Swap","DE 10Y Swap",
+            "UK 10Y Swap","NZ 10Y Swap","AU 30Y Swap","CA 30Y Swap","US 30Y Swap","DE 30Y Swap","UK 30Y Swap",
+            "NZ 30Y Swap","JP 30Y Swap","MX 10Y Swap","MX 10Y Swap OIS","SA 10Y Swap","CZ 10Y Swap","PO 10Y Swap",
+            "SK 10Y Swap","CH 10Y Swap","UK 10Y Swap Inf"
+        ],
+        "Portfolio": [
+            "DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","EM","DM","DM","DM",
+            "DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","EM","DM","DM","DM","DM","DM","DM","EM",
+            "EM","EM","EM","EM","EM","EM","EM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM",
+            "DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","DM"
+        ]
+    })
 
-    # <--- SNIPPET OF CODE FOR BUILDING default_positions_dm, default_positions_em, ETC. --->
+    dm_instruments = instruments_data[instruments_data['Portfolio'] == 'DM']['Instrument Name'].tolist()
+    em_instruments = instruments_data[instruments_data['Portfolio'] == 'EM']['Instrument Name'].tolist()
+
+    default_positions_dm = pd.DataFrame({
+        'Instrument': dm_instruments,
+        'Outright': [0.0]*len(dm_instruments),
+        'Curve': [0.0]*len(dm_instruments),
+        'Spread': [0.0]*len(dm_instruments),
+    })
+
+    default_positions_em = pd.DataFrame({
+        'Instrument': em_instruments,
+        'Outright': [0.0]*len(em_instruments),
+        'Curve': [0.0]*len(em_instruments),
+        'Spread': [0.0]*len(em_instruments),
+    })
 
     st.sidebar.header("🔍 Sensitivity Rate Configuration")
     excel_file = 'historical_data.xlsx'
@@ -192,7 +290,36 @@ def main():
     with tabs[1]:
         st.header("🔄 Input Positions")
 
-        # ...<SAME>... build DM table, EM table
+        st.subheader('📈 DM Portfolio Positions')
+        gb_dm = GridOptionsBuilder.from_dataframe(default_positions_dm)
+        gb_dm.configure_default_column(editable=True, resizable=True)
+        dm_options = gb_dm.build()
+        dm_response = AgGrid(
+            default_positions_dm,
+            gridOptions=dm_options,
+            height=600,
+            width='100%',
+            enable_enterprise_modules=False,
+            fit_columns_on_grid_load=True
+        )
+        positions_data_dm = dm_response['data']
+
+        if len(em_instruments) > 0:
+            st.subheader('🌍 EM Portfolio Positions')
+            gb_em = GridOptionsBuilder.from_dataframe(default_positions_em)
+            gb_em.configure_default_column(editable=True, resizable=True)
+            em_options = gb_em.build()
+            em_response = AgGrid(
+                default_positions_em,
+                gridOptions=em_options,
+                height=600,
+                width='100%',
+                enable_enterprise_modules=False,
+                fit_columns_on_grid_load=True
+            )
+            positions_data_em = em_response['data']
+        else:
+            positions_data_em = pd.DataFrame(columns=['Instrument', 'Outright', 'Curve', 'Spread'])
 
     with tabs[2]:
         st.header("⚙️ Configuration Settings")
@@ -223,7 +350,6 @@ def main():
                     st.error("No data loaded. Check Excel file.")
                     st.stop()
 
-                # Adjust time zones, compute daily changes, fallback OIS
                 df = adjust_time_zones(df, instrument_country)
                 daily_changes = calculate_daily_changes_in_bps(df)
                 daily_changes = fallback_mx_ois_data(daily_changes)
@@ -232,14 +358,21 @@ def main():
                     st.warning("No daily changes computed.")
                     st.stop()
 
-                # Volatilities, Covariances, Beta window
                 volatilities = calculate_volatilities(daily_changes, volatility_lookback_days)
                 covariance_matrix = calculate_covariance_matrix(daily_changes, volatility_lookback_days)
                 beta_data_window = daily_changes.tail(volatility_lookback_days)
 
-                # ... <SAME> ... collecting positions for DM and EM
+                positions_data_dm = pd.DataFrame(positions_data_dm).astype({'Outright': float, 'Curve': float, 'Spread': float})
+                if not positions_data_em.empty:
+                    positions_data_em = pd.DataFrame(positions_data_em).astype({'Outright': float, 'Curve': float, 'Spread': float})
+                else:
+                    positions_data_em = pd.DataFrame(columns=['Instrument', 'Outright', 'Curve', 'Spread'])
 
-                # Build expanded positions
+                positions_data_dm['Portfolio'] = 'DM'
+                if not positions_data_em.empty:
+                    positions_data_em['Portfolio'] = 'EM'
+                positions_data = pd.concat([positions_data_dm, positions_data_em], ignore_index=True)
+
                 positions_list = []
                 for _, row in positions_data.iterrows():
                     instrument = row['Instrument']
@@ -260,12 +393,10 @@ def main():
                     st.stop()
 
                 expanded_positions_vector = expanded_positions_data.set_index(['Instrument', 'Position Type'])['Position']
-
                 if covariance_matrix.empty:
                     st.warning("Covariance matrix empty.")
                     st.stop()
 
-                # Filter instruments
                 instruments = expanded_positions_vector.index.get_level_values('Instrument').unique()
                 missing_instruments = [instr for instr in instruments if instr not in covariance_matrix.index]
                 if missing_instruments:
@@ -281,26 +412,24 @@ def main():
                     st.warning("No valid instruments after filtering.")
                     st.stop()
 
-                # ### FIX: Fill expanded_cov_matrix with double loop ###
-                expanded_cov_matrix = pd.DataFrame(
-                    index=expanded_positions_vector.index,
-                    columns=expanded_positions_vector.index,
-                    dtype=float
-                )
+                # Build the base submatrix for valid instruments
+                covariance_submatrix = covariance_matrix.loc[valid_instruments, valid_instruments]
 
-                # We have a multi-index for rows *and* columns
-                # So for each multi-index row (Instrument, PositionType),
-                #   look up the instrument's covariance with each other instrument
+                # --- Replace partial row assignment with nested cell-by-cell assignment:
+                expanded_cov_matrix = pd.DataFrame(
+                    data=0.0,
+                    index=expanded_positions_vector.index,
+                    columns=expanded_positions_vector.index
+                )
                 for pos1 in expanded_positions_vector.index:
-                    instr1 = pos1[0]
+                    instr1 = pos1[0]  # The instrument portion of (Instrument, PositionType)
                     for pos2 in expanded_positions_vector.index:
                         instr2 = pos2[0]
-                        if instr1 in covariance_matrix.index and instr2 in covariance_matrix.columns:
-                            expanded_cov_matrix.loc[pos1, pos2] = covariance_matrix.loc[instr1, instr2]
-                        else:
-                            expanded_cov_matrix.loc[pos1, pos2] = 0.0
+                        val = 0.0
+                        if (instr1 in covariance_submatrix.index) and (instr2 in covariance_submatrix.columns):
+                            val = covariance_submatrix.loc[instr1, instr2]
+                        expanded_cov_matrix.loc[pos1, pos2] = val
 
-                # Convert to float
                 expanded_cov_matrix = expanded_cov_matrix.astype(float)
 
                 portfolio_variance = np.dot(expanded_positions_vector.values,
@@ -308,18 +437,16 @@ def main():
                 if np.isnan(portfolio_variance) or portfolio_variance <= 0:
                     st.warning("Portfolio variance invalid.")
                     st.stop()
-
                 portfolio_volatility = np.sqrt(portfolio_variance)
                 if np.isnan(portfolio_volatility):
                     st.warning("Volatility is NaN.")
                     st.stop()
 
-                # Marginal, contribution, etc.
                 expanded_volatilities = expanded_positions_vector.index.get_level_values('Instrument').map(volatilities).to_series(index=expanded_positions_vector.index)
                 standalone_volatilities = expanded_positions_vector.abs() * expanded_volatilities
-
                 marginal_contributions = expanded_cov_matrix.dot(expanded_positions_vector)
                 contribution_to_variance = expanded_positions_vector * marginal_contributions
+                # portfolio_variance > 0 from earlier check
                 contribution_to_volatility = contribution_to_variance / portfolio_volatility
                 percent_contribution = (contribution_to_variance / portfolio_variance) * 100
 
@@ -332,13 +459,12 @@ def main():
 
                 risk_contributions_formatted = risk_contributions[
                     ['Instrument', 'Position Type', 'Position', 'Position Stand-alone Volatility',
-                     'Instrument Volatility per 1Y Duration (bps)', 'Contribution to Volatility (bps)',
-                     'Percent Contribution (%)', 'Portfolio']
+                     'Instrument Volatility per 1Y Duration (bps)',
+                     'Contribution to Volatility (bps)', 'Percent Contribution (%)', 'Portfolio']
                 ]
                 risk_contributions_formatted = risk_contributions_formatted[
                     (risk_contributions_formatted['Position'].notna()) & (risk_contributions_formatted['Position'] != 0)
                 ]
-
                 numeric_cols = [
                     'Position', 'Position Stand-alone Volatility',
                     'Instrument Volatility per 1Y Duration (bps)',
@@ -349,6 +475,7 @@ def main():
                 def fmt_val(x):
                     return f"{x:.2f} bps" if (not np.isnan(x) and not np.isinf(x)) else "N/A"
 
+                # VaR/cVaR calculations
                 VaR_95, VaR_99, cVaR_95, cVaR_99 = (np.nan, np.nan, np.nan, np.nan)
                 price_returns_var = daily_changes.tail(var_lookback_days)
                 positions_per_instrument = expanded_positions_vector.groupby('Instrument').sum()
@@ -365,7 +492,7 @@ def main():
                                 cVaR_95 = -portfolio_returns_var[portfolio_returns_var <= -VaR_95].mean() if (portfolio_returns_var <= -VaR_95).any() else np.nan
                                 cVaR_99 = -portfolio_returns_var[portfolio_returns_var <= -VaR_99].mean() if (portfolio_returns_var <= -VaR_99).any() else np.nan
 
-                # Beta
+                # Compute Beta using volatility_lookback_days
                 portfolio_beta = np.nan
                 portfolio_r2 = np.nan
                 instrument_betas = {}
@@ -376,7 +503,7 @@ def main():
                         portfolio_returns_for_beta = beta_data_window[available_for_beta].dot(positions_per_instrument.loc[available_for_beta])
                         portfolio_beta = compute_beta(portfolio_returns_for_beta, us10yr_returns, volatility_lookback_days)
 
-                        # R²
+                        # Compute Portfolio R² (correlation^2)
                         common_dates = portfolio_returns_for_beta.index.intersection(us10yr_returns.index)
                         if len(common_dates) > 1:
                             pvals = portfolio_returns_for_beta.loc[common_dates]
@@ -384,6 +511,7 @@ def main():
                             corr = np.corrcoef(pvals, uvals)[0, 1]
                             portfolio_r2 = corr**2
 
+                        # Compute individual instrument betas
                         for instr in available_for_beta:
                             pos_val = positions_per_instrument[instr]
                             if pos_val != 0:
@@ -397,7 +525,6 @@ def main():
                     'Contribution to Volatility (bps)': 'sum'
                 }).reset_index()
 
-                # ---- Output
                 st.subheader("Risk Attribution by Instrument")
                 if not risk_contributions_formatted.empty:
                     fig_instrument_pie = px.pie(
@@ -441,6 +568,7 @@ def main():
                 st.write(f"**Daily VaR at 99%:** {fmt_val(VaR_99)}")
                 st.write(f"**Daily cVaR at 99%:** {fmt_val(cVaR_99)}")
 
+                # ---- Display Portfolio Beta and R²
                 st.subheader("📉 Beta to US 10yr Rates (Daily Basis)")
                 if not np.isnan(portfolio_beta):
                     st.write(f"**Portfolio Beta to {sensitivity_rate} (Daily):** {portfolio_beta:.4f}")
