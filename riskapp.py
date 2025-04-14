@@ -344,21 +344,42 @@ def main():
                 st.plotly_chart(make_waterfall(cb_grp, "Label", "Contribution to Volatility (bps)", "Country & Bucket Volatility"), use_container_width=True)
 
                 # VaR/CVaR waterfalls
-                for lvl, comp_var, comp_cvar in [(95, compVaR95, compCVaR95), (99, compVaR99, compCVaR99)]:
+                for lvl, port_var_val, port_cvar_val, comp_var, comp_cvar in [
+                    (95, VaR95, CVaR95, compVaR95, compCVaR95),
+                    (99, VaR99, CVaR99, compVaR99, compCVaR99),
+                ]:
                     if not comp_var.empty:
                         def _series_to_df(s):
                             df_tmp = s.reset_index()
                             df_tmp.columns = ["Instrument", "Value"]
                             return df_tmp
 
-                        st.subheader(f"Component VaR {lvl}% – Instrument")
+                        # ----- VaR waterfall with Diversification bar -----
+                        var_df = _series_to_df(comp_var)
+                        divers_gap = port_var_val - var_df["Value"].sum()
+                        var_df = pd.concat([
+                            var_df,
+                            pd.DataFrame({"Instrument": ["Diversification"], "Value": [divers_gap]})
+                        ], ignore_index=True)
+                        st.subheader(f"Component VaR {lvl}% – Instrument (+ Diversification)")
                         st.plotly_chart(
-                            make_waterfall(_series_to_df(comp_var), "Instrument", "Value", f"Component VaR {lvl}%"),
+                            make_waterfall(var_df, "Instrument", "Value", f"Component VaR {lvl}%"),
+                            use_container_width=True,
+                        )(_series_to_df(comp_var), "Instrument", "Value", f"Component VaR {lvl}%"),
                             use_container_width=True,
                         )
-                        st.subheader(f"Component CVaR {lvl}% – Instrument")
+                        # ----- CVaR waterfall with Diversification bar -----
+                        cvar_df = _series_to_df(comp_cvar)
+                        divers_cgap = port_cvar_val - cvar_df["Value"].sum()
+                        cvar_df = pd.concat([
+                            cvar_df,
+                            pd.DataFrame({"Instrument": ["Diversification"], "Value": [divers_cgap]})
+                        ], ignore_index=True)
+                        st.subheader(f"Component CVaR {lvl}% – Instrument (+ Diversification)")
                         st.plotly_chart(
-                            make_waterfall(_series_to_df(comp_cvar), "Instrument", "Value", f"Component CVaR {lvl}%"),
+                            make_waterfall(cvar_df, "Instrument", "Value", f"Component CVaR {lvl}%"),
+                            use_container_width=True,
+                        )(_series_to_df(comp_cvar), "Instrument", "Value", f"Component CVaR {lvl}%"),
                             use_container_width=True,
                         )
 
@@ -367,7 +388,7 @@ def main():
                 col1.metric("Portfolio Volatility", f"{port_vol:.2f} bps")
                 col2.metric("VaR 95%", f"{VaR95:.2f} bps")
                 col3.metric("VaR 99%", f"{VaR99:.2f} bps")
-                col4.metric("CVaR 95%", f"{compCVaR95.mean():.2f} bps" if not compCVaR95.empty else "N/A")
+                col4.metric("CVaR 95%", f"{CVaR95:.2f} bps"):.2f} bps" if not compCVaR95.empty else "N/A")
 
                 # 8️⃣ Detailed table
                 st.subheader("Detailed Contributions Table")
@@ -382,6 +403,5 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
