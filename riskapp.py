@@ -65,7 +65,6 @@ def fallback_mx_ois_data(daily_changes):
         'MX 5Y Swap OIS': 'MX 5Y Swap',
         'MX 10Y Swap OIS': 'MX 10Y Swap'
     }
-
     for ois_col, non_ois_col in ois_map.items():
         if ois_col in daily_changes.columns and non_ois_col in daily_changes.columns:
             daily_changes[ois_col] = daily_changes[ois_col].fillna(daily_changes[non_ois_col])
@@ -129,7 +128,8 @@ def guess_country_from_instrument_name(name):
     country_codes = {
         'AU': 'AU', 'US': 'US', 'DE': 'DE', 'UK': 'UK', 'IT': 'IT',
         'CA': 'CA', 'JP': 'JP', 'CH': 'CH', 'BR': 'BR', 'MX': 'MX',
-        'SA': 'SA', 'CZ': 'CZ', 'PO': 'PO', 'SK': 'SK', 'NZ': 'NZ', 'SW': 'SW', 'NK': 'NK'
+        'SA': 'SA', 'CZ': 'CZ', 'PO': 'PO', 'SK': 'SK', 'NZ': 'NZ',
+        'SW': 'SW', 'NK': 'NK'
     }
     for code in country_codes:
         if code in name:
@@ -244,6 +244,7 @@ def main():
     st.title('📈 BMIX Portfolio Risk Attribution')
     st.write("App initialized successfully.")
 
+    # Load instrument data
     instruments_data = pd.DataFrame({
         "Ticker": [
             "GACGB2 Index","GACGB10 Index","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty","UXYAFWD Comdty",
@@ -321,7 +322,6 @@ def main():
 
     with tabs[1]:
         st.header("🔄 Input Positions")
-
         st.subheader('📈 DM Portfolio Positions')
         gb_dm = GridOptionsBuilder.from_dataframe(default_positions_dm)
         gb_dm.configure_default_column(editable=True, resizable=True)
@@ -385,7 +385,6 @@ def main():
                 df = adjust_time_zones(df, instrument_country)
                 daily_changes = calculate_daily_changes_in_bps(df)
                 daily_changes = fallback_mx_ois_data(daily_changes)
-
                 if daily_changes.empty:
                     st.warning("No daily changes computed.")
                     st.stop()
@@ -418,7 +417,6 @@ def main():
                                 'Position': pos_val,
                                 'Portfolio': portfolio
                             })
-
                 expanded_positions_data = pd.DataFrame(positions_list)
                 if expanded_positions_data.empty:
                     st.warning("No active positions entered.")
@@ -444,13 +442,16 @@ def main():
                     st.warning("No valid instruments after filtering.")
                     st.stop()
 
-                # Build the base submatrix for valid instruments
+                # Build the base submatrix for valid instruments.
                 covariance_submatrix = covariance_matrix.loc[valid_instruments, valid_instruments]
 
-                # --- Optimize: Build the expanded covariance matrix vectorized ---
-                # Instead of the double loop, we use the instrument names from the multi-index
-                instr_order = expanded_positions_vector.index.get_level_values('Instrument')
-                expanded_cov_matrix = covariance_submatrix.loc[instr_order, instr_order]
+                # --- Vectorized construction of the expanded covariance matrix ---
+                # Get the instrument name for each position (from the MultiIndex)
+                instr_order = expanded_positions_vector.index.get_level_values('Instrument').to_numpy()
+                # Extract the numerical covariance values using instrument order
+                cov_values = covariance_submatrix.loc[instr_order, instr_order].values
+                # Create a DataFrame with the same MultiIndex as expanded_positions_vector
+                expanded_cov_matrix = pd.DataFrame(cov_values, index=expanded_positions_vector.index, columns=expanded_positions_vector.index)
 
                 portfolio_variance = np.dot(expanded_positions_vector.values,
                                             np.dot(expanded_cov_matrix.values, expanded_positions_vector.values))
@@ -462,7 +463,7 @@ def main():
                     st.warning("Volatility is NaN.")
                     st.stop()
 
-                # Map each instrument to its volatility using vectorized mapping
+                # Map each instrument to its volatility using vectorized mapping.
                 expanded_vols = pd.Series(expanded_positions_vector.index.get_level_values('Instrument'))
                 expanded_volatilities = expanded_vols.map(volatilities.to_dict())
                 expanded_volatilities.index = expanded_positions_vector.index
@@ -475,7 +476,9 @@ def main():
                 percent_contribution = (contribution_to_variance / portfolio_variance) * 100
 
                 risk_contributions = expanded_positions_data.copy()
-                risk_contributions = risk_contributions.set_index(['Instrument', 'Position Type']).reindex(expanded_positions_vector.index).reset_index()
+                risk_contributions = risk_contributions.set_index(['Instrument', 'Position Type'])\
+                                                       .reindex(expanded_positions_vector.index)\
+                                                       .reset_index()
                 risk_contributions['Position Stand-alone Volatility'] = standalone_volatilities.values
                 risk_contributions['Contribution to Volatility (bps)'] = contribution_to_volatility.values
                 risk_contributions['Percent Contribution (%)'] = percent_contribution.values
@@ -513,12 +516,14 @@ def main():
                             if not portfolio_returns_var.empty:
                                 VaR_95 = -np.percentile(portfolio_returns_var, 5)
                                 VaR_99 = -np.percentile(portfolio_returns_var, 1)
-                                cVaR_95 = -portfolio_returns_var[portfolio_returns_var <= -VaR_95].mean() if (portfolio_returns_var <= -VaR_95).any() else np.nan
-                                cVaR_99 = -portfolio_returns_var[portfolio_returns_var <= -VaR_99].mean() if (portfolio_returns_var <= -VaR_99).any() else np.nan
+                                cVaR_95 = -portfolio_returns_var[portfolio_returns_var <= -VaR_95].mean() \
+                                          if (portfolio_returns_var <= -VaR_95).any() else np.nan
+                                cVaR_99 = -portfolio_returns_var[portfolio_returns_var <= -VaR_99].mean() \
+                                          if (portfolio_returns_var <= -VaR_99).any() else np.nan
 
                 # --- Compute instrument contributions to portfolio cVaR ---
-                # For each instrument, on the extreme days (when portfolio return is at or beyond VaR),
-                # compute the average loss as: loss = - (price_return * position)
+                # On extreme days (when portfolio return <= -VaR), for each instrument compute:
+                # loss = - (price_return * position), then average these losses.
                 if not portfolio_returns_var.empty:
                     extreme_mask_95 = portfolio_returns_var <= -VaR_95
                     extreme_mask_99 = portfolio_returns_var <= -VaR_99
