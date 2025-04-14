@@ -132,7 +132,7 @@ def guess_country_from_instrument_name(name):
     country_codes = {
         'AU': 'AU', 'US': 'US', 'DE': 'DE', 'UK': 'UK', 'IT': 'IT',
         'CA': 'CA', 'JP': 'JP', 'CH': 'CH', 'BR': 'BR', 'MX': 'MX',
-        'SA': 'SA', 'CZ': 'CZ', 'PO': 'PO', 'SK': 'SK', 'NZ': 'NZ'
+        'SA': 'SA', 'CZ': 'CZ', 'PO': 'PO', 'SK': 'SK', 'NZ': 'NZ','SW' : 'SW', 'NK' : 'NK'
     }
     for code in country_codes:
         if code in name:
@@ -205,7 +205,9 @@ instrument_country = {
     "PO 10Y Swap": "PO",
     "SK 10Y Swap": "SK",
     "CH 10Y Swap": "CH",
-    "UK 10Y Swap Inf": "UK"
+    "UK 10Y Swap Inf": "UK",
+    "SW 10Y Swap": "SW",
+    "NK 10Y Swap" : "NK"
 }
 
 def main():
@@ -225,7 +227,7 @@ def main():
             "USSW10 Curncy","EUSA10 Curncy","BPSWS10 BGN Curncy","NDSWAP10 BGN Curncy","ADSW30 Curncy",
             "CDSW30 Curncy","USSW30 Curncy","EUSA30 Curncy","BPSWS30 BGN Curncy","NDSWAP30 BGN Curncy",
             "JYSO30 Curncy","MPSW10J BGN Curncy","MPSWF10J BGN Curncy","SASW10 Curncy","CKSW10 BGN Curncy",
-            "PZSW10 BGN Curncy","KWSWNI10 BGN Curncy","CCSWNI10 Curncy","BPSWIT10 Curncy"
+            "PZSW10 BGN Curncy","KWSWNI10 BGN Curncy","CCSWNI10 Curncy","BPSWIT10 Curncy", "SKSW10 Curncy", "NKSW10 Curncy"
         ],
         "Instrument Name": [
             "AU 3Y Future","AU 10Y Future","US 2Y Future","US 5Y Future","US 10Y Future","US 10Y Ultra Future",
@@ -237,13 +239,13 @@ def main():
             "SK 5Y Swap","CH 5Y Swap","JP 5Y Swap","AU 10Y Swap","CA 10Y Swap","US 10Y Swap","DE 10Y Swap",
             "UK 10Y Swap","NZ 10Y Swap","AU 30Y Swap","CA 30Y Swap","US 30Y Swap","DE 30Y Swap","UK 30Y Swap",
             "NZ 30Y Swap","JP 30Y Swap","MX 10Y Swap","MX 10Y Swap OIS","SA 10Y Swap","CZ 10Y Swap","PO 10Y Swap",
-            "SK 10Y Swap","CH 10Y Swap","UK 10Y Swap Inf"
+            "SK 10Y Swap","CH 10Y Swap","UK 10Y Swap Inf", "SW 10Y Swap", "NK 10Y Swap"
         ],
         "Portfolio": [
             "DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","EM","DM","DM","DM",
             "DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","EM","DM","DM","DM","DM","DM","DM","EM",
             "EM","EM","EM","EM","EM","EM","EM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM",
-            "DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","DM"
+            "DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","DM", "DM", "DM"
         ]
     })
 
@@ -615,4 +617,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
