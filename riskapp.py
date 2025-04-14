@@ -337,9 +337,9 @@ def main():
                 for lvl, comp_var, comp_cvar in [(95, compVaR95, compCVaR95), (99, compVaR99, compCVaR99)]:
                     if not comp_var.empty:
                         st.subheader(f"Component VaR {lvl}% – Instrument")
-                        st.plotly_chart(make_waterfall(comp_var.reset_index().rename(columns={0:"Value"}), "Instrument", "Value", f"Component VaR {lvl}%"), use_container_width=True)
+                        st.plotly_chart(make_waterfall(comp_var.reset_index(name='Value'), "Instrument", "Value", f"Component VaR {lvl}%"), use_container_width=True)
                         st.subheader(f"Component CVaR {lvl}% – Instrument")
-                        st.plotly_chart(make_waterfall(comp_cvar.reset_index().rename(columns={0:"Value"}), "Instrument", "Value", f"Component CVaR {lvl}%"), use_container_width=True)
+                        st.plotly_chart(make_waterfall(comp_cvar.reset_index(name='Value'), "Instrument", "Value", f"Component CVaR {lvl}%"), use_container_width=True)
 
                 # 7️⃣ Metric tiles
                 col1, col2, col3, col4 = st.columns(4)
@@ -361,3 +361,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
