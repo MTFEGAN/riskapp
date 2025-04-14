@@ -244,7 +244,7 @@ def main():
     st.title('📈 BMIX Portfolio Risk Attribution')
     st.write("App initialized successfully.")
 
-    # Load instrument data
+    # Load instrument data.
     instruments_data = pd.DataFrame({
         "Ticker": [
             "GACGB2 Index","GACGB10 Index","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty","UXYAFWD Comdty",
@@ -446,11 +446,8 @@ def main():
                 covariance_submatrix = covariance_matrix.loc[valid_instruments, valid_instruments]
 
                 # --- Vectorized construction of the expanded covariance matrix ---
-                # Get the instrument name for each position (from the MultiIndex)
                 instr_order = expanded_positions_vector.index.get_level_values('Instrument').to_numpy()
-                # Extract the numerical covariance values using instrument order
                 cov_values = covariance_submatrix.loc[instr_order, instr_order].values
-                # Create a DataFrame with the same MultiIndex as expanded_positions_vector
                 expanded_cov_matrix = pd.DataFrame(cov_values, index=expanded_positions_vector.index, columns=expanded_positions_vector.index)
 
                 portfolio_variance = np.dot(expanded_positions_vector.values,
@@ -476,9 +473,7 @@ def main():
                 percent_contribution = (contribution_to_variance / portfolio_variance) * 100
 
                 risk_contributions = expanded_positions_data.copy()
-                risk_contributions = risk_contributions.set_index(['Instrument', 'Position Type'])\
-                                                       .reindex(expanded_positions_vector.index)\
-                                                       .reset_index()
+                risk_contributions = risk_contributions.set_index(['Instrument', 'Position Type']).reindex(expanded_positions_vector.index).reset_index()
                 risk_contributions['Position Stand-alone Volatility'] = standalone_volatilities.values
                 risk_contributions['Contribution to Volatility (bps)'] = contribution_to_volatility.values
                 risk_contributions['Percent Contribution (%)'] = percent_contribution.values
@@ -522,8 +517,8 @@ def main():
                                           if (portfolio_returns_var <= -VaR_99).any() else np.nan
 
                 # --- Compute instrument contributions to portfolio cVaR ---
-                # On extreme days (when portfolio return <= -VaR), for each instrument compute:
-                # loss = - (price_return * position), then average these losses.
+                # For each instrument, on the extreme days (portfolio return <= -VaR),
+                # compute the average loss: loss = - (price_return * position)
                 if not portfolio_returns_var.empty:
                     extreme_mask_95 = portfolio_returns_var <= -VaR_95
                     extreme_mask_99 = portfolio_returns_var <= -VaR_99
@@ -532,13 +527,30 @@ def main():
                     for instr in positions_for_var.index:
                         if instr in price_returns_var.columns:
                             pos = positions_for_var[instr]
-                            loss_series = - price_returns_var[instr] * pos  # loss series for instrument
+                            loss_series = - price_returns_var[instr] * pos
                             contrib_95 = loss_series[extreme_mask_95].mean() if extreme_mask_95.any() else np.nan
                             contrib_99 = loss_series[extreme_mask_99].mean() if extreme_mask_99.any() else np.nan
                             instrument_contrib_95[instr] = contrib_95
                             instrument_contrib_99[instr] = contrib_99
 
-                # Sort instrument contributions for waterfall charts
+                # --- Build a grouped column chart for individual instrument cVaRs ---
+                cvar_instrument_df = pd.DataFrame({
+                    "Instrument": list(instrument_contrib_95.keys()),
+                    "cVaR 95": [instrument_contrib_95[k] for k in instrument_contrib_95.keys()],
+                    "cVaR 99": [instrument_contrib_99.get(k, np.nan) for k in instrument_contrib_95.keys()]
+                })
+                cvar_instrument_df_melt = cvar_instrument_df.melt(
+                    id_vars=["Instrument"],
+                    value_vars=["cVaR 95", "cVaR 99"],
+                    var_name="Confidence Level",
+                    value_name="cVaR"
+                )
+                fig_instrument_cvar = px.bar(cvar_instrument_df_melt, x="Instrument", y="cVaR",
+                                             color="Confidence Level",
+                                             barmode="group",
+                                             title="Instrument cVaR (95% & 99%) for Each Position")
+
+                # Sort instrument contributions for waterfall charts.
                 cvar95_items = sorted(instrument_contrib_95.items(), key=lambda x: x[1] if x[1] is not None else 0, reverse=True)
                 cvar95_labels = [item[0] for item in cvar95_items]
                 cvar95_values = [item[1] for item in cvar95_items]
@@ -551,7 +563,7 @@ def main():
                 diff_99 = cVaR_99 - sum([v for v in cvar99_values if v is not None])
                 use_diversification_99 = abs(diff_99) > 1e-6
 
-                # Compute portfolio beta using beta_data_window
+                # Compute portfolio beta using beta_data_window.
                 portfolio_beta = np.nan
                 portfolio_r2 = np.nan
                 instrument_betas = {}
@@ -561,14 +573,12 @@ def main():
                         us10yr_returns = beta_data_window[sensitivity_rate]
                         portfolio_returns_for_beta = beta_data_window[available_for_beta].dot(positions_for_var.loc[available_for_beta])
                         portfolio_beta = compute_beta(portfolio_returns_for_beta, us10yr_returns, volatility_lookback_days)
-
                         common_dates = portfolio_returns_for_beta.index.intersection(us10yr_returns.index)
                         if len(common_dates) > 1:
                             pvals = portfolio_returns_for_beta.loc[common_dates]
                             uvals = us10yr_returns.loc[common_dates]
                             corr = np.corrcoef(pvals, uvals)[0, 1]
                             portfolio_r2 = corr**2
-
                         for instr in available_for_beta:
                             pos_val = positions_for_var[instr]
                             if pos_val != 0:
@@ -585,7 +595,7 @@ def main():
                 # ---------------------------
                 # Create Waterfall Charts
                 # ---------------------------
-                # Volatility Waterfall: by instrument
+                # Volatility Waterfall: by instrument.
                 vol_inst = risk_contributions_formatted.groupby("Instrument")["Contribution to Volatility (bps)"].sum().reset_index()
                 vol_inst['abs'] = vol_inst["Contribution to Volatility (bps)"].abs()
                 vol_inst = vol_inst.sort_values(by="abs", ascending=False)
@@ -594,7 +604,7 @@ def main():
                 fig_vol_inst = create_waterfall_chart(vol_inst_labels, vol_inst_values, portfolio_volatility,
                                                       "Volatility Contributions by Instrument", include_diversification=False)
 
-                # Volatility Waterfall: by Country & Bucket
+                # Volatility Waterfall: by Country & Bucket.
                 if not country_bucket.empty:
                     country_bucket["Group"] = country_bucket["Country"] + " - " + country_bucket["Position Type"]
                     country_bucket['abs'] = country_bucket["Contribution to Volatility (bps)"].abs()
@@ -606,14 +616,14 @@ def main():
                 else:
                     fig_vol_group = None
 
-                # cVaR Waterfall: by instrument (95% & 99%)
+                # cVaR Waterfall: by instrument (95% & 99%).
                 fig_cvar95 = create_waterfall_chart(cvar95_labels, cvar95_values, cVaR_95,
                                                     "cVaR (95%) Contributions by Instrument", include_diversification=use_diversification_95)
                 fig_cvar99 = create_waterfall_chart(cvar99_labels, cvar99_values, cVaR_99,
                                                     "cVaR (99%) Contributions by Instrument", include_diversification=use_diversification_99)
 
                 # ---------------------------
-                # Display the charts and metrics
+                # Display the charts and metrics.
                 # ---------------------------
                 st.subheader("Risk Attribution by Instrument (Volatility)")
                 st.plotly_chart(fig_vol_inst, use_container_width=True)
@@ -631,6 +641,10 @@ def main():
 
                 st.subheader("cVaR (99%) Contributions by Instrument")
                 st.plotly_chart(fig_cvar99, use_container_width=True)
+
+                # ---- New: Column chart for individual instrument cVaRs ----
+                st.subheader("Instrument cVaR (95% & 99%) for Each Position")
+                st.plotly_chart(fig_instrument_cvar, use_container_width=True)
 
                 metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
                 metrics_col1.metric(label="📊 Total Portfolio Volatility", value=fmt_val(portfolio_volatility))
@@ -690,3 +704,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
