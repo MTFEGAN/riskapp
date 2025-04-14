@@ -336,10 +336,21 @@ def main():
                 # VaR/CVaR waterfalls
                 for lvl, comp_var, comp_cvar in [(95, compVaR95, compCVaR95), (99, compVaR99, compCVaR99)]:
                     if not comp_var.empty:
+                        def _series_to_df(s):
+                            df_tmp = s.reset_index()
+                            df_tmp.columns = ["Instrument", "Value"]
+                            return df_tmp
+
                         st.subheader(f"Component VaR {lvl}% – Instrument")
-                        st.plotly_chart(make_waterfall(comp_var.reset_index(name='Value'), "Instrument", "Value", f"Component VaR {lvl}%"), use_container_width=True)
+                        st.plotly_chart(
+                            make_waterfall(_series_to_df(comp_var), "Instrument", "Value", f"Component VaR {lvl}%"),
+                            use_container_width=True,
+                        )
                         st.subheader(f"Component CVaR {lvl}% – Instrument")
-                        st.plotly_chart(make_waterfall(comp_cvar.reset_index(name='Value'), "Instrument", "Value", f"Component CVaR {lvl}%"), use_container_width=True)
+                        st.plotly_chart(
+                            make_waterfall(_series_to_df(comp_cvar), "Instrument", "Value", f"Component CVaR {lvl}%"),
+                            use_container_width=True,
+                        )
 
                 # 7️⃣ Metric tiles
                 col1, col2, col3, col4 = st.columns(4)
