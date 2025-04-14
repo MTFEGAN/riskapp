@@ -301,13 +301,19 @@ def main():
                 port_pl = hist_window.mul(pos_by_instr.loc[valid_for_var], axis=1).sum(axis=1)
 
                 def component_var_cvar(level: int):
+                    """Return portfolio VaR, component VaR & CVaR (un‑scaled).
+                    Component VaR is each instrument’s average loss in the VaR tail; the
+                    diversification gap is handled later when plotting.
+                    """
                     if port_pl.empty:
                         return np.nan, pd.Series(dtype=float), pd.Series(dtype=float)
+
                     var_val = -np.percentile(port_pl, 100 - level)
                     tail_mask = port_pl <= -var_val
-                    tail_pl = hist_window.loc[tail_mask]
-                    comp_var = -tail_pl.quantile(level / 100.0)
-                    comp_cvar = -tail_pl.mean()
+                    tail_pl  = hist_window.loc[tail_mask]
+
+                    comp_var = -tail_pl.mean()      # average loss at VaR threshold
+                    comp_cvar = -tail_pl.mean()     # same for CVaR (tail mean)
                     return var_val, comp_var, comp_cvar
 
                 VaR95, compVaR95, compCVaR95 = component_var_cvar(95)
@@ -372,4 +378,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
