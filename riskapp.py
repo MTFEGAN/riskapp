@@ -298,26 +298,30 @@ def main():
                 pos_by_instr = pos_vector.groupby("Instrument").sum()
                 valid_for_var = pos_by_instr.index.intersection(hist_window.columns)
                 hist_window = hist_window[valid_for_var]
-                port_pl = hist_window.mul(pos_by_instr.loc[valid_for_var], axis=1).sum(axis=1)
 
-                def component_var_cvar(level: int):
-                    """Return portfolio VaR, component VaR & CVaR (un‑scaled).
-                    Component VaR is each instrument’s average loss in the VaR tail; the
-                    diversification gap is handled later when plotting.
-                    """
-                    if port_pl.empty:
-                        return np.nan, pd.Series(dtype=float), pd.Series(dtype=float)
+                # P/L matrix (bps) – each instrument already scaled by position size
+                pl_matrix = hist_window.mul(pos_by_instr.loc[valid_for_var], axis=1)
+                port_pl   = pl_matrix.sum(axis=1)
 
-                    var_val = -np.percentile(port_pl, 100 - level)
-                    tail_mask = port_pl <= -var_val
-                    tail_pl  = hist_window.loc[tail_mask]
+                def calc_var_cvar(series: pd.Series, level: int):
+                    var_val = -np.percentile(series, 100 - level)
+                    tail    = series[series <= -var_val]
+                    cvar_val = -tail.mean() if not tail.empty else np.nan
+                    return var_val, cvar_val
 
-                    comp_var = -tail_pl.mean()      # average loss at VaR threshold
-                    comp_cvar = -tail_pl.mean()     # same for CVaR (tail mean)
-                    return var_val, comp_var, comp_cvar
+                VaR95, CVaR95 = calc_var_cvar(port_pl, 95)
+                VaR99, CVaR99 = calc_var_cvar(port_pl, 99)
 
-                VaR95, compVaR95, compCVaR95 = component_var_cvar(95)
-                VaR99, compVaR99, compCVaR99 = component_var_cvar(99)
+                def component_series(level: int):
+                    comp_var, comp_cvar = {}, {}
+                    for instr in pl_matrix.columns:
+                        v, c = calc_var_cvar(pl_matrix[instr], level)
+                        comp_var[instr]  = v
+                        comp_cvar[instr] = c
+                    return pd.Series(comp_var), pd.Series(comp_cvar)
+
+                compVaR95, compCVaR95 = component_series(95)
+                compVaR99, compCVaR99 = component_series(99)
 
                 # 5️⃣ Build output table
                 out_tbl = pos_df.copy()
@@ -378,5 +382,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
