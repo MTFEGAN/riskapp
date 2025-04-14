@@ -69,7 +69,6 @@ def fallback_mx_ois_data(daily_changes):
     for ois_col, non_ois_col in ois_map.items():
         if ois_col in daily_changes.columns and non_ois_col in daily_changes.columns:
             daily_changes[ois_col] = daily_changes[ois_col].fillna(daily_changes[non_ois_col])
-
     return daily_changes
 
 def calculate_volatilities(daily_changes, lookback_days):
@@ -448,22 +447,10 @@ def main():
                 # Build the base submatrix for valid instruments
                 covariance_submatrix = covariance_matrix.loc[valid_instruments, valid_instruments]
 
-                # Build the expanded covariance matrix for each (Instrument, Position Type)
-                expanded_cov_matrix = pd.DataFrame(
-                    data=0.0,
-                    index=expanded_positions_vector.index,
-                    columns=expanded_positions_vector.index
-                )
-                for pos1 in expanded_positions_vector.index:
-                    instr1 = pos1[0]  # Instrument part of (Instrument, Position Type)
-                    for pos2 in expanded_positions_vector.index:
-                        instr2 = pos2[0]
-                        val = 0.0
-                        if (instr1 in covariance_submatrix.index) and (instr2 in covariance_submatrix.columns):
-                            val = covariance_submatrix.loc[instr1, instr2]
-                        expanded_cov_matrix.loc[pos1, pos2] = val
-
-                expanded_cov_matrix = expanded_cov_matrix.astype(float)
+                # --- Optimize: Build the expanded covariance matrix vectorized ---
+                # Instead of the double loop, we use the instrument names from the multi-index
+                instr_order = expanded_positions_vector.index.get_level_values('Instrument')
+                expanded_cov_matrix = covariance_submatrix.loc[instr_order, instr_order]
 
                 portfolio_variance = np.dot(expanded_positions_vector.values,
                                             np.dot(expanded_cov_matrix.values, expanded_positions_vector.values))
@@ -475,9 +462,9 @@ def main():
                     st.warning("Volatility is NaN.")
                     st.stop()
 
-                # Map each instrument to its volatility by converting the instrument index to a series first.
+                # Map each instrument to its volatility using vectorized mapping
                 expanded_vols = pd.Series(expanded_positions_vector.index.get_level_values('Instrument'))
-                expanded_volatilities = expanded_vols.map(volatilities)
+                expanded_volatilities = expanded_vols.map(volatilities.to_dict())
                 expanded_volatilities.index = expanded_positions_vector.index
 
                 standalone_volatilities = expanded_positions_vector.abs() * expanded_volatilities
@@ -530,8 +517,8 @@ def main():
                                 cVaR_99 = -portfolio_returns_var[portfolio_returns_var <= -VaR_99].mean() if (portfolio_returns_var <= -VaR_99).any() else np.nan
 
                 # --- Compute instrument contributions to portfolio cVaR ---
-                # Now, we look at the days when the portfolio reaches its cVaR levels
-                # and compute the average loss of each instrument on those extreme days.
+                # For each instrument, on the extreme days (when portfolio return is at or beyond VaR),
+                # compute the average loss as: loss = - (price_return * position)
                 if not portfolio_returns_var.empty:
                     extreme_mask_95 = portfolio_returns_var <= -VaR_95
                     extreme_mask_99 = portfolio_returns_var <= -VaR_99
@@ -698,5 +685,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
