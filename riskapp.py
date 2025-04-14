@@ -8,6 +8,12 @@ from st_aggrid import AgGrid, GridOptionsBuilder
 
 st.set_page_config(page_title="📈 BMIX Portfolio Risk Attribution", layout="wide")
 
+
+# Helper: simple formatting for metrics
+def fmt_val(x):
+    return f"{x:.2f} bps" if (not np.isnan(x) and not np.isinf(x)) else "N/A"
+
+
 def load_historical_data(excel_file):
     """
     Load historical yield data from the specified Excel file.
@@ -29,6 +35,7 @@ def load_historical_data(excel_file):
         st.error(f"Error reading Excel file: {e}")
         return pd.DataFrame()
 
+
 def adjust_time_zones(df, instrument_country):
     """
     Adjust time zones by shifting certain instruments by one business day.
@@ -36,14 +43,19 @@ def adjust_time_zones(df, instrument_country):
     All other instruments are shifted forward by one day to lag data.
     """
     non_lag_countries = ['JP', 'AU', 'SK', 'CH']
-    instrument_countries = pd.Series([instrument_country.get(instr, 'Other') for instr in df.columns], index=df.columns)
+    instrument_countries = pd.Series(
+        [instrument_country.get(instr, 'Other') for instr in df.columns],
+        index=df.columns
+    )
     instruments_to_lag = instrument_countries[~instrument_countries.isin(non_lag_countries)].index.tolist()
+
     adjusted_df = df.copy()
     if instruments_to_lag:
         # Shift forward by 1 day to lag data
         adjusted_df[instruments_to_lag] = adjusted_df[instruments_to_lag].shift(1)
     adjusted_df = adjusted_df.dropna()
     return adjusted_df
+
 
 def calculate_daily_changes_in_bps(df):
     """
@@ -53,6 +65,7 @@ def calculate_daily_changes_in_bps(df):
     """
     daily_changes = df.diff().dropna() * 100
     return daily_changes
+
 
 def fallback_mx_ois_data(daily_changes):
     """
@@ -69,6 +82,7 @@ def fallback_mx_ois_data(daily_changes):
             daily_changes[ois_col] = daily_changes[ois_col].fillna(daily_changes[non_ois_col])
     return daily_changes
 
+
 def calculate_volatilities(daily_changes, lookback_days):
     """
     Calculate annualized volatility over the specified lookback period.
@@ -82,6 +96,7 @@ def calculate_volatilities(daily_changes, lookback_days):
     volatilities = recent_returns.std() * np.sqrt(252)
     return volatilities
 
+
 def calculate_covariance_matrix(daily_changes, lookback_days):
     """
     Calculate annualized covariance matrix over the specified lookback period.
@@ -94,6 +109,7 @@ def calculate_covariance_matrix(daily_changes, lookback_days):
         return pd.DataFrame()
     covariance_matrix = recent_returns.cov() * 252
     return covariance_matrix
+
 
 def compute_beta(x_returns, y_returns, lookback_days):
     """
@@ -117,6 +133,7 @@ def compute_beta(x_returns, y_returns, lookback_days):
         return np.nan
     return cov / var_y
 
+
 def guess_country_from_instrument_name(name):
     """
     Guess the country of an instrument from its name.
@@ -131,6 +148,7 @@ def guess_country_from_instrument_name(name):
         if code in name:
             return country_codes[code]
     return 'Other'
+
 
 # Comprehensive instrument-country mapping
 instrument_country = {
@@ -203,6 +221,7 @@ instrument_country = {
     "NK 10Y Swap": "NK"
 }
 
+
 # Utility function: create a waterfall chart.
 def create_waterfall_chart(labels, values, total, title, include_diversification=False):
     """
@@ -236,6 +255,7 @@ def create_waterfall_chart(labels, values, total, title, include_diversification
     )
     return fig
 
+
 def main():
     st.title('📈 BMIX Portfolio Risk Attribution')
     st.write("App initialized successfully.")
@@ -243,52 +263,53 @@ def main():
     # Load instrument data.
     instruments_data = pd.DataFrame({
         "Ticker": [
-            "GACGB2 Index","GACGB10 Index","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty","UXYAFWD Comdty",
-            "WNAFWD Comdty","DUAFWD Comdty","OEAFWD Comdty","RXAFWD Comdty","GAFWD Comdty","IKAFWD Comdty",
-            "CNAFWD Comdty","JBAFWD Comdty","CCSWNI1 Curncy","ADSW2 Curncy","CDSO2 Curncy","USSW2 Curncy",
-            "EUSA2 Curncy","BPSWS2 BGN Curncy","NDSWAP2 BGN Curncy","I39302Y Index","MPSW2B BGN Curncy",
-            "MPSWF2B Curncy","SAFR1I2 BGN Curncy","CKSW2 BGN Curncy","PZSW2 BGN Curncy","KWSWNI2 BGN Curncy",
-            "CCSWNI2 CMPN Curncy","ADSW5 Curncy","CDSO5 Curncy","USSW5 Curncy","EUSA5 Curncy","BPSWS5 BGN Curncy",
-            "NDSWAP5 BGN Curncy","I39305Y Index","MPSW5E Curncy","MPSWF5E Curncy","SASW5 Curncy","CKSW5 Curncy",
-            "PZSW5 Curncy","KWSWNI5 Curncy","CCSWNI5 Curncy","JYSO5 Curncy","ADSW10 Curncy","CDSW10 Curncy",
-            "USSW10 Curncy","EUSA10 Curncy","BPSWS10 BGN Curncy","NDSWAP10 BGN Curncy","ADSW30 Curncy",
-            "CDSW30 Curncy","USSW30 Curncy","EUSA30 Curncy","BPSWS30 BGN Curncy","NDSWAP30 BGN Curncy",
-            "JYSO30 Curncy","MPSW10J BGN Curncy","MPSWF10J BGN Curncy","SASW10 Curncy","CKSW10 BGN Curncy",
-            "PZSW10 BGN Curncy","KWSWNI10 BGN Curncy","CCSWNI10 Curncy","BPSWIT10 Curncy", "SKSW10 Curncy", "NKSW10 Curncy"
+            "GACGB2 Index", "GACGB10 Index", "TUAFWD Comdty", "FVAFWD Comdty", "TYAFWD Comdty", "UXYAFWD Comdty",
+            "WNAFWD Comdty", "DUAFWD Comdty", "OEAFWD Comdty", "RXAFWD Comdty", "GAFWD Comdty", "IKAFWD Comdty",
+            "CNAFWD Comdty", "JBAFWD Comdty", "CCSWNI1 Curncy", "ADSW2 Curncy", "CDSO2 Curncy", "USSW2 Curncy",
+            "EUSA2 Curncy", "BPSWS2 BGN Curncy", "NDSWAP2 BGN Curncy", "I39302Y Index", "MPSW2B BGN Curncy",
+            "MPSWF2B Curncy", "SAFR1I2 BGN Curncy", "CKSW2 BGN Curncy", "PZSW2 BGN Curncy", "KWSWNI2 BGN Curncy",
+            "CCSWNI2 CMPN Curncy", "ADSW5 Curncy", "CDSO5 Curncy", "USSW5 Curncy", "EUSA5 Curncy", "BPSWS5 BGN Curncy",
+            "NDSWAP5 BGN Curncy", "I39305Y Index", "MPSW5E Curncy", "MPSWF5E Curncy", "SASW5 Curncy", "CKSW5 Curncy",
+            "PZSW5 Curncy", "KWSWNI5 Curncy", "CCSWNI5 Curncy", "JYSO5 Curncy", "ADSW10 Curncy", "CDSW10 Curncy",
+            "USSW10 Curncy", "EUSA10 Curncy", "BPSWS10 BGN Curncy", "NDSWAP10 BGN Curncy", "ADSW30 Curncy",
+            "CDSW30 Curncy", "USSW30 Curncy", "EUSA30 Curncy", "BPSWS30 BGN Curncy", "NDSWAP30 BGN Curncy",
+            "JYSO30 Curncy", "MPSW10J BGN Curncy", "MPSWF10J BGN Curncy", "SASW10 Curncy", "CKSW10 BGN Curncy",
+            "PZSW10 BGN Curncy", "KWSWNI10 BGN Curncy", "CCSWNI10 Curncy", "BPSWIT10 Curncy", "SKSW10 Curncy", "NKSW10 Curncy"
         ],
         "Instrument Name": [
-            "AU 3Y Future","AU 10Y Future","US 2Y Future","US 5Y Future","US 10Y Future","US 10Y Ultra Future",
-            "US 30Y Future","DE 2Y Future","DE 5Y Future","DE 10Y Future","UK 10Y Future","IT 10Y Future",
-            "CA 10Y Future","JP 10Y Future","CH 1Y Swap","AU 2Y Swap","CA 2Y Swap","US 2Y Swap","DE 2Y Swap",
-            "UK 2Y Swap","NZ 2Y Swap","BR 2Y Swap","MX 2Y Swap","MX 2Y Swap OIS","SA 2Y Swap","CZ 2Y Swap",
-            "PO 2Y Swap","SK 2Y Swap","CH 2Y Swap","AU 5Y Swap","CA 5Y Swap","US 5Y Swap","DE 5Y Swap","UK 5Y Swap",
-            "NZ 5Y Swap","BR 5Y Swap","MX 5Y Swap","MX 5Y Swap OIS","SA 5Y Swap","CZ 5Y Swap","PO 5Y Swap",
-            "SK 5Y Swap","CH 5Y Swap","JP 5Y Swap","AU 10Y Swap","CA 10Y Swap","US 10Y Swap","DE 10Y Swap",
-            "UK 10Y Swap","NZ 10Y Swap","AU 30Y Swap","CA 30Y Swap","US 30Y Swap","DE 30Y Swap","UK 30Y Swap",
-            "NZ 30Y Swap","JP 30Y Swap","MX 10Y Swap","MX 10Y Swap OIS","SA 10Y Swap","CZ 10Y Swap","PO 10Y Swap",
-            "SK 10Y Swap","CH 10Y Swap","UK 10Y Swap Inf", "SW 10Y Swap", "NK 10Y Swap"
+            "AU 3Y Future", "AU 10Y Future", "US 2Y Future", "US 5Y Future", "US 10Y Future", "US 10Y Ultra Future",
+            "US 30Y Future", "DE 2Y Future", "DE 5Y Future", "DE 10Y Future", "UK 10Y Future", "IT 10Y Future",
+            "CA 10Y Future", "JP 10Y Future", "CH 1Y Swap", "AU 2Y Swap", "CA 2Y Swap", "US 2Y Swap", "DE 2Y Swap",
+            "UK 2Y Swap", "NZ 2Y Swap", "BR 2Y Swap", "MX 2Y Swap", "MX 2Y Swap OIS", "SA 2Y Swap", "CZ 2Y Swap",
+            "PO 2Y Swap", "SK 2Y Swap", "CH 2Y Swap", "AU 5Y Swap", "CA 5Y Swap", "US 5Y Swap", "DE 5Y Swap", "UK 5Y Swap",
+            "NZ 5Y Swap", "BR 5Y Swap", "MX 5Y Swap", "MX 5Y Swap OIS", "SA 5Y Swap", "CZ 5Y Swap", "PO 5Y Swap",
+            "SK 5Y Swap", "CH 5Y Swap", "JP 5Y Swap", "AU 10Y Swap", "CA 10Y Swap", "US 10Y Swap", "DE 10Y Swap",
+            "UK 10Y Swap", "NZ 10Y Swap", "AU 30Y Swap", "CA 30Y Swap", "US 30Y Swap", "DE 30Y Swap", "UK 30Y Swap",
+            "NZ 30Y Swap", "JP 30Y Swap", "MX 10Y Swap", "MX 10Y Swap OIS", "SA 10Y Swap", "CZ 10Y Swap", "PO 10Y Swap",
+            "SK 10Y Swap", "CH 10Y Swap", "UK 10Y Swap Inf", "SW 10Y Swap", "NK 10Y Swap"
         ],
         "Portfolio": [
-            "DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","EM","DM","DM","DM",
-            "DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","EM","DM","DM","DM","DM","DM","DM","EM",
-            "EM","EM","EM","EM","EM","EM","EM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM","DM",
-            "DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","DM", "DM", "DM"
+            "DM", "DM", "DM", "DM", "DM", "DM", "DM", "DM", "DM", "DM", "DM", "DM", "DM", "DM", "EM", "DM", "DM", "DM",
+            "DM", "DM", "DM", "EM", "EM", "EM", "EM", "EM", "EM", "EM", "EM", "DM", "DM", "DM", "DM", "DM", "DM", "EM",
+            "EM", "EM", "EM", "EM", "EM", "EM", "EM", "DM", "DM", "DM", "DM", "DM", "DM", "DM", "DM", "DM", "DM", "DM",
+            "DM", "DM", "DM", "EM", "EM", "EM", "EM", "EM", "EM", "EM", "DM", "DM", "DM"
         ]
     })
     dm_instruments = instruments_data[instruments_data['Portfolio'] == 'DM']['Instrument Name'].tolist()
     em_instruments = instruments_data[instruments_data['Portfolio'] == 'EM']['Instrument Name'].tolist()
     default_positions_dm = pd.DataFrame({
         'Instrument': dm_instruments,
-        'Outright': [0.0]*len(dm_instruments),
-        'Curve': [0.0]*len(dm_instruments),
-        'Spread': [0.0]*len(dm_instruments),
+        'Outright': [0.0] * len(dm_instruments),
+        'Curve': [0.0] * len(dm_instruments),
+        'Spread': [0.0] * len(dm_instruments),
     })
     default_positions_em = pd.DataFrame({
         'Instrument': em_instruments,
-        'Outright': [0.0]*len(em_instruments),
-        'Curve': [0.0]*len(em_instruments),
-        'Spread': [0.0]*len(em_instruments),
+        'Outright': [0.0] * len(em_instruments),
+        'Curve': [0.0] * len(em_instruments),
+        'Spread': [0.0] * len(em_instruments),
     })
+
     st.sidebar.header("🔍 Sensitivity Rate Configuration")
     excel_file = 'historical_data.xlsx'
     if not os.path.exists(excel_file):
@@ -307,7 +328,9 @@ def main():
         options=available_columns,
         index=default_index
     )
+
     tabs = st.tabs(["📊 Risk Attribution", "📂 Input Positions", "⚙️ Settings"])
+
     with tabs[1]:
         st.header("🔄 Input Positions")
         st.subheader('📈 DM Portfolio Positions')
@@ -339,6 +362,7 @@ def main():
             positions_data_em = em_response['data']
         else:
             positions_data_em = pd.DataFrame(columns=['Instrument', 'Outright', 'Curve', 'Spread'])
+
     with tabs[2]:
         st.header("⚙️ Configuration Settings")
         volatility_period_options = {
@@ -357,6 +381,7 @@ def main():
         }
         var_period = st.selectbox('VaR lookback:', list(var_period_options.keys()), index=1)
         var_lookback_days = var_period_options[var_period]
+
     with tabs[0]:
         st.header("📊 Risk Attribution Results")
         if st.button('🚀 Run Risk Attribution'):
@@ -374,6 +399,7 @@ def main():
                 volatilities = calculate_volatilities(daily_changes, volatility_lookback_days)
                 covariance_matrix = calculate_covariance_matrix(daily_changes, volatility_lookback_days)
                 beta_data_window = daily_changes.tail(volatility_lookback_days)
+
                 positions_data_dm = pd.DataFrame(positions_data_dm).astype({'Outright': float, 'Curve': float, 'Spread': float})
                 if not positions_data_em.empty:
                     positions_data_em = pd.DataFrame(positions_data_em).astype({'Outright': float, 'Curve': float, 'Spread': float})
@@ -420,7 +446,9 @@ def main():
                 covariance_submatrix = covariance_matrix.loc[valid_instruments, valid_instruments]
                 instr_order = expanded_positions_vector.index.get_level_values('Instrument').to_numpy()
                 cov_values = covariance_submatrix.loc[instr_order, instr_order].values
-                expanded_cov_matrix = pd.DataFrame(cov_values, index=expanded_positions_vector.index, columns=expanded_positions_vector.index)
+                expanded_cov_matrix = pd.DataFrame(cov_values,
+                                                   index=expanded_positions_vector.index,
+                                                   columns=expanded_positions_vector.index)
                 portfolio_variance = np.dot(expanded_positions_vector.values,
                                             np.dot(expanded_cov_matrix.values, expanded_positions_vector.values))
                 if np.isnan(portfolio_variance) or portfolio_variance <= 0:
@@ -438,19 +466,24 @@ def main():
                 contribution_to_variance = expanded_positions_vector * marginal_contributions
                 contribution_to_volatility = contribution_to_variance / portfolio_volatility
                 percent_contribution = (contribution_to_variance / portfolio_variance) * 100
+
                 risk_contributions = expanded_positions_data.copy()
-                risk_contributions = risk_contributions.set_index(['Instrument', 'Position Type']).reindex(expanded_positions_vector.index).reset_index()
+                risk_contributions = risk_contributions.set_index(['Instrument', 'Position Type'])\
+                                                       .reindex(expanded_positions_vector.index)\
+                                                       .reset_index()
                 risk_contributions['Position Stand-alone Volatility'] = standalone_volatilities.values
                 risk_contributions['Contribution to Volatility (bps)'] = contribution_to_volatility.values
                 risk_contributions['Percent Contribution (%)'] = percent_contribution.values
                 risk_contributions['Instrument Volatility per 1Y Duration (bps)'] = expanded_volatilities.values
+
                 risk_contributions_formatted = risk_contributions[
                     ['Instrument', 'Position Type', 'Position', 'Position Stand-alone Volatility',
                      'Instrument Volatility per 1Y Duration (bps)',
                      'Contribution to Volatility (bps)', 'Percent Contribution (%)', 'Portfolio']
                 ]
                 risk_contributions_formatted = risk_contributions_formatted[
-                    (risk_contributions_formatted['Position'].notna()) & (risk_contributions_formatted['Position'] != 0)
+                    (risk_contributions_formatted['Position'].notna()) &
+                    (risk_contributions_formatted['Position'] != 0)
                 ]
                 numeric_cols = [
                     'Position', 'Position Stand-alone Volatility',
@@ -458,11 +491,12 @@ def main():
                     'Contribution to Volatility (bps)', 'Percent Contribution (%)'
                 ]
                 risk_contributions_formatted[numeric_cols] = risk_contributions_formatted[numeric_cols].round(2)
-                risk_contributions_formatted = risk_contributions_formatted.copy()  # Ensure we have a modifiable copy.
+                risk_contributions_formatted = risk_contributions_formatted.copy()
                 risk_contributions_formatted['Country'] = risk_contributions_formatted['Instrument'].apply(guess_country_from_instrument_name)
                 country_bucket = risk_contributions_formatted.groupby(['Country', 'Position Type']).agg({
                     'Contribution to Volatility (bps)': 'sum'
                 }).reset_index()
+
                 # VaR/cVaR calculations using portfolio returns.
                 VaR_95, VaR_99, cVaR_95, cVaR_99 = (np.nan, np.nan, np.nan, np.nan)
                 price_returns_var = daily_changes.tail(var_lookback_days)
@@ -479,6 +513,7 @@ def main():
                                 VaR_99 = -np.percentile(portfolio_returns_var, 1)
                                 cVaR_95 = -portfolio_returns_var[portfolio_returns_var <= -VaR_95].mean() if (portfolio_returns_var <= -VaR_95).any() else np.nan
                                 cVaR_99 = -portfolio_returns_var[portfolio_returns_var <= -VaR_99].mean() if (portfolio_returns_var <= -VaR_99).any() else np.nan
+
                 # --- Compute portfolio cVaR contributions (Waterfall Charts) ---
                 if not portfolio_returns_var.empty:
                     extreme_mask_95 = portfolio_returns_var <= -VaR_95
@@ -507,6 +542,7 @@ def main():
                     "cVaR (99%) Contributions by Instrument",
                     include_diversification=False
                 )
+
                 # --- Compute Standalone Instrument cVaR ---
                 individual_cvar_95 = {}
                 individual_cvar_99 = {}
@@ -539,6 +575,7 @@ def main():
                                              color="Confidence Level",
                                              barmode="group",
                                              title="Standalone Instrument cVaR (95% & 99%)")
+
                 # --- Volatility Waterfall Charts ---
                 vol_inst = risk_contributions_formatted.groupby("Instrument")["Contribution to Volatility (bps)"].sum().reset_index()
                 vol_inst['abs'] = vol_inst["Contribution to Volatility (bps)"].abs()
@@ -560,6 +597,7 @@ def main():
                                                            "Volatility Contributions by Country & Bucket", include_diversification=False)
                 else:
                     fig_vol_group = None
+
                 # --- Compute Portfolio Beta ---
                 portfolio_beta = np.nan
                 portfolio_r2 = np.nan
@@ -583,7 +621,15 @@ def main():
                                 instr_beta = compute_beta(instr_return, us10yr_returns, volatility_lookback_days)
                                 if not np.isnan(instr_beta):
                                     instrument_betas[instr] = (pos_val, instr_beta)
-                # --- Display Charts and Metrics ---
+
+                risk_contributions_formatted['Country'] = risk_contributions_formatted['Instrument'].apply(guess_country_from_instrument_name)
+                country_bucket = risk_contributions_formatted.groupby(['Country', 'Position Type']).agg({
+                    'Contribution to Volatility (bps)': 'sum'
+                }).reset_index()
+
+                # ---------------------------
+                # Display the charts and metrics.
+                # ---------------------------
                 st.subheader("Risk Attribution by Instrument (Volatility)")
                 st.plotly_chart(fig_vol_inst, use_container_width=True)
                 st.subheader("Risk Attribution by Country & Bucket (Volatility)")
@@ -649,7 +695,6 @@ def main():
                     )
                 else:
                     st.write("No detailed contributions table to display.")
-                    
+
 if __name__ == '__main__':
     main()
-
