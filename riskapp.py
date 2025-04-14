@@ -275,7 +275,6 @@ def main():
             "DM","DM","DM","EM","EM","EM","EM","EM","EM","EM","DM", "DM", "DM"
         ]
     })
-
     dm_instruments = instruments_data[instruments_data['Portfolio'] == 'DM']['Instrument Name'].tolist()
     em_instruments = instruments_data[instruments_data['Portfolio'] == 'EM']['Instrument Name'].tolist()
 
@@ -285,7 +284,6 @@ def main():
         'Curve': [0.0]*len(dm_instruments),
         'Spread': [0.0]*len(dm_instruments),
     })
-
     default_positions_em = pd.DataFrame({
         'Instrument': em_instruments,
         'Outright': [0.0]*len(em_instruments),
@@ -298,12 +296,10 @@ def main():
     if not os.path.exists(excel_file):
         st.sidebar.error(f"❌ '{excel_file}' not found.")
         st.stop()
-
     raw_df = load_historical_data(excel_file)
     if raw_df.empty:
         st.error("No data loaded from Excel.")
         st.stop()
-
     available_columns = raw_df.columns.tolist()
     default_index = 0
     if 'US 10Y Future' in available_columns:
@@ -313,9 +309,7 @@ def main():
         options=available_columns,
         index=default_index
     )
-
     tabs = st.tabs(["📊 Risk Attribution", "📂 Input Positions", "⚙️ Settings"])
-
     with tabs[1]:
         st.header("🔄 Input Positions")
         st.subheader('📈 DM Portfolio Positions')
@@ -347,7 +341,6 @@ def main():
             positions_data_em = em_response['data']
         else:
             positions_data_em = pd.DataFrame(columns=['Instrument', 'Outright', 'Curve', 'Spread'])
-
     with tabs[2]:
         st.header("⚙️ Configuration Settings")
         volatility_period_options = {
@@ -366,12 +359,10 @@ def main():
         }
         var_period = st.selectbox('VaR lookback:', list(var_period_options.keys()), index=1)
         var_lookback_days = var_period_options[var_period]
-
     with tabs[0]:
         st.header("📊 Risk Attribution Results")
         if st.button('🚀 Run Risk Attribution'):
             with st.spinner('Calculating risk attribution...'):
-                # Load and process historical data
                 df = load_historical_data(excel_file)
                 if df.empty:
                     st.error("No data loaded. Check Excel file.")
@@ -385,8 +376,6 @@ def main():
                 volatilities = calculate_volatilities(daily_changes, volatility_lookback_days)
                 covariance_matrix = calculate_covariance_matrix(daily_changes, volatility_lookback_days)
                 beta_data_window = daily_changes.tail(volatility_lookback_days)
-
-                # Process position data
                 positions_data_dm = pd.DataFrame(positions_data_dm).astype({'Outright': float, 'Curve': float, 'Spread': float})
                 if not positions_data_em.empty:
                     positions_data_em = pd.DataFrame(positions_data_em).astype({'Outright': float, 'Curve': float, 'Spread': float})
@@ -430,8 +419,6 @@ def main():
                 if not valid_instruments:
                     st.warning("No valid instruments after filtering.")
                     st.stop()
-
-                # Construct expanded covariance matrix vectorized.
                 covariance_submatrix = covariance_matrix.loc[valid_instruments, valid_instruments]
                 instr_order = expanded_positions_vector.index.get_level_values('Instrument').to_numpy()
                 cov_values = covariance_submatrix.loc[instr_order, instr_order].values
@@ -445,8 +432,6 @@ def main():
                 if np.isnan(portfolio_volatility):
                     st.warning("Volatility is NaN.")
                     st.stop()
-
-                # Map instrument volatilities.
                 expanded_vols = pd.Series(expanded_positions_vector.index.get_level_values('Instrument'))
                 expanded_volatilities = expanded_vols.map(volatilities.to_dict())
                 expanded_volatilities.index = expanded_positions_vector.index
@@ -455,14 +440,14 @@ def main():
                 contribution_to_variance = expanded_positions_vector * marginal_contributions
                 contribution_to_volatility = contribution_to_variance / portfolio_volatility
                 percent_contribution = (contribution_to_variance / portfolio_variance) * 100
-
                 risk_contributions = expanded_positions_data.copy()
-                risk_contributions = risk_contributions.set_index(['Instrument', 'Position Type']).reindex(expanded_positions_vector.index).reset_index()
+                risk_contributions = risk_contributions.set_index(['Instrument', 'Position Type'])\
+                                                       .reindex(expanded_positions_vector.index)\
+                                                       .reset_index()
                 risk_contributions['Position Stand-alone Volatility'] = standalone_volatilities.values
                 risk_contributions['Contribution to Volatility (bps)'] = contribution_to_volatility.values
                 risk_contributions['Percent Contribution (%)'] = percent_contribution.values
                 risk_contributions['Instrument Volatility per 1Y Duration (bps)'] = expanded_volatilities.values
-
                 risk_contributions_formatted = risk_contributions[
                     ['Instrument', 'Position Type', 'Position', 'Position Stand-alone Volatility',
                      'Instrument Volatility per 1Y Duration (bps)',
@@ -477,10 +462,8 @@ def main():
                     'Contribution to Volatility (bps)', 'Percent Contribution (%)'
                 ]
                 risk_contributions_formatted[numeric_cols] = risk_contributions_formatted[numeric_cols].round(2)
-
                 def fmt_val(x):
                     return f"{x:.2f} bps" if (not np.isnan(x) and not np.isinf(x)) else "N/A"
-
                 # VaR/cVaR calculations using portfolio returns.
                 VaR_95, VaR_99, cVaR_95, cVaR_99 = (np.nan, np.nan, np.nan, np.nan)
                 price_returns_var = daily_changes.tail(var_lookback_days)
@@ -499,28 +482,52 @@ def main():
                                           if (portfolio_returns_var <= -VaR_95).any() else np.nan
                                 cVaR_99 = -portfolio_returns_var[portfolio_returns_var <= -VaR_99].mean() \
                                           if (portfolio_returns_var <= -VaR_99).any() else np.nan
-
-                # --- Compute individual (standalone) instrument cVaRs.
-                # For each instrument (from positions_for_var), compute the instrument's loss series:
-                # loss = - (instrument return * position value)
+                # --- Compute instrument contributions to portfolio cVaR (Waterfall Charts) ---
+                # Use the extreme day method (portfolio returns <= -VaR).
+                if not portfolio_returns_var.empty:
+                    extreme_mask_95 = portfolio_returns_var <= -VaR_95
+                    extreme_mask_99 = portfolio_returns_var <= -VaR_99
+                    instrument_contrib_95 = {}
+                    instrument_contrib_99 = {}
+                    for instr in positions_for_var.index:
+                        if instr in price_returns_var.columns:
+                            pos = positions_for_var[instr]
+                            loss_series = - price_returns_var[instr] * pos  # Positive loss values.
+                            contrib_95 = loss_series[extreme_mask_95].mean() if extreme_mask_95.any() else np.nan
+                            contrib_99 = loss_series[extreme_mask_99].mean() if extreme_mask_99.any() else np.nan
+                            instrument_contrib_95[instr] = contrib_95
+                            instrument_contrib_99[instr] = contrib_99
+                # For the portfolio cVaR contribution waterfall charts, we want the contributions to sum exactly to portfolio cVaR.
+                fig_cvar95 = create_waterfall_chart(
+                    list(instrument_contrib_95.keys()),
+                    list(instrument_contrib_95.values()),
+                    cVaR_95,
+                    "cVaR (95%) Contributions by Instrument",
+                    include_diversification=False
+                )
+                fig_cvar99 = create_waterfall_chart(
+                    list(instrument_contrib_99.keys()),
+                    list(instrument_contrib_99.values()),
+                    cVaR_99,
+                    "cVaR (99%) Contributions by Instrument",
+                    include_diversification=False
+                )
+                # --- Compute Standalone Instrument cVaR ---
+                # For each instrument, compute its own cVaR using its individual loss history.
                 individual_cvar_95 = {}
                 individual_cvar_99 = {}
                 for instr in positions_for_var.index:
                     if instr in price_returns_var.columns:
                         pos = positions_for_var[instr]
-                        loss_series = - price_returns_var[instr] * pos  # This yields positive losses.
+                        loss_series = - price_returns_var[instr] * pos  # Positive losses.
                         if loss_series.empty:
                             continue
-                        # Compute VaR for the instrument.
                         var_i_95 = np.percentile(loss_series, 95)
                         var_i_99 = np.percentile(loss_series, 99)
-                        # Compute cVaR: average loss on days that exceed the VaR threshold.
                         cvar_i_95 = loss_series[loss_series >= var_i_95].mean() if (loss_series >= var_i_95).any() else np.nan
                         cvar_i_99 = loss_series[loss_series >= var_i_99].mean() if (loss_series >= var_i_99).any() else np.nan
                         individual_cvar_95[instr] = cvar_i_95
                         individual_cvar_99[instr] = cvar_i_99
-
-                # Build DataFrame for grouped column chart (individual cVaRs).
                 cvar_instrument_df = pd.DataFrame({
                     "Instrument": list(individual_cvar_95.keys()),
                     "cVaR 95": [individual_cvar_95[k] for k in individual_cvar_95.keys()],
@@ -532,29 +539,34 @@ def main():
                     var_name="Confidence Level",
                     value_name="cVaR"
                 )
-                # Ensure cVaR values are positive.
                 cvar_instrument_df_melt["cVaR"] = cvar_instrument_df_melt["cVaR"].abs()
-
                 fig_instrument_cvar = px.bar(cvar_instrument_df_melt, 
                                              x="Instrument", y="cVaR",
                                              color="Confidence Level",
                                              barmode="group",
                                              title="Standalone Instrument cVaR (95% & 99%)")
-
-                # --- (Previous waterfall charts code remains unchanged.)
-                # Sort instrument contributions for waterfall charts.
-                cvar95_items = sorted(individual_cvar_95.items(), key=lambda x: x[1] if x[1] is not None else 0, reverse=True)
-                cvar95_labels = [item[0] for item in cvar95_items]
-                cvar95_values = [item[1] for item in cvar95_items]
-                diff_95 = cVaR_95 - sum([v for v in cvar95_values if v is not None])
-                use_diversification_95 = abs(diff_95) > 1e-6
-                cvar99_items = sorted(individual_cvar_99.items(), key=lambda x: x[1] if x[1] is not None else 0, reverse=True)
-                cvar99_labels = [item[0] for item in cvar99_items]
-                cvar99_values = [item[1] for item in cvar99_items]
-                diff_99 = cVaR_99 - sum([v for v in cvar99_values if v is not None])
-                use_diversification_99 = abs(diff_99) > 1e-6
-
-                # Compute portfolio beta.
+                # --- (Waterfall charts for volatility remain unchanged.)
+                vol_inst = risk_contributions_formatted.groupby("Instrument")["Contribution to Volatility (bps)"].sum().reset_index()
+                vol_inst['abs'] = vol_inst["Contribution to Volatility (bps)"].abs()
+                vol_inst = vol_inst.sort_values(by="abs", ascending=False)
+                vol_inst_labels = vol_inst["Instrument"].tolist()
+                vol_inst_values = vol_inst["Contribution to Volatility (bps)"].tolist()
+                fig_vol_inst = create_waterfall_chart(vol_inst_labels, vol_inst_values, portfolio_volatility,
+                                                      "Volatility Contributions by Instrument", include_diversification=False)
+                country_bucket = risk_contributions_formatted.groupby(['Country', 'Position Type']).agg({
+                    'Contribution to Volatility (bps)': 'sum'
+                }).reset_index()
+                if not country_bucket.empty:
+                    country_bucket["Group"] = country_bucket["Country"] + " - " + country_bucket["Position Type"]
+                    country_bucket['abs'] = country_bucket["Contribution to Volatility (bps)"].abs()
+                    country_bucket = country_bucket.sort_values(by="abs", ascending=False)
+                    vol_group_labels = country_bucket["Group"].tolist()
+                    vol_group_values = country_bucket["Contribution to Volatility (bps)"].tolist()
+                    fig_vol_group = create_waterfall_chart(vol_group_labels, vol_group_values, portfolio_volatility,
+                                                           "Volatility Contributions by Country & Bucket", include_diversification=False)
+                else:
+                    fig_vol_group = None
+                # --- Compute portfolio beta.
                 portfolio_beta = np.nan
                 portfolio_r2 = np.nan
                 instrument_betas = {}
@@ -577,36 +589,10 @@ def main():
                                 instr_beta = compute_beta(instr_return, us10yr_returns, volatility_lookback_days)
                                 if not np.isnan(instr_beta):
                                     instrument_betas[instr] = (pos_val, instr_beta)
-
                 risk_contributions_formatted['Country'] = risk_contributions_formatted['Instrument'].apply(guess_country_from_instrument_name)
                 country_bucket = risk_contributions_formatted.groupby(['Country', 'Position Type']).agg({
                     'Contribution to Volatility (bps)': 'sum'
                 }).reset_index()
-
-                # ---------------------------
-                # Create Waterfall Charts.
-                # ---------------------------
-                vol_inst = risk_contributions_formatted.groupby("Instrument")["Contribution to Volatility (bps)"].sum().reset_index()
-                vol_inst['abs'] = vol_inst["Contribution to Volatility (bps)"].abs()
-                vol_inst = vol_inst.sort_values(by="abs", ascending=False)
-                vol_inst_labels = vol_inst["Instrument"].tolist()
-                vol_inst_values = vol_inst["Contribution to Volatility (bps)"].tolist()
-                fig_vol_inst = create_waterfall_chart(vol_inst_labels, vol_inst_values, portfolio_volatility,
-                                                      "Volatility Contributions by Instrument", include_diversification=False)
-                if not country_bucket.empty:
-                    country_bucket["Group"] = country_bucket["Country"] + " - " + country_bucket["Position Type"]
-                    country_bucket['abs'] = country_bucket["Contribution to Volatility (bps)"].abs()
-                    country_bucket = country_bucket.sort_values(by="abs", ascending=False)
-                    vol_group_labels = country_bucket["Group"].tolist()
-                    vol_group_values = country_bucket["Contribution to Volatility (bps)"].tolist()
-                    fig_vol_group = create_waterfall_chart(vol_group_labels, vol_group_values, portfolio_volatility,
-                                                           "Volatility Contributions by Country & Bucket", include_diversification=False)
-                else:
-                    fig_vol_group = None
-                fig_cvar95 = create_waterfall_chart(cvar95_labels, cvar95_values, cVaR_95,
-                                                    "cVaR (95%) Contributions by Instrument", include_diversification=use_diversification_95)
-                fig_cvar99 = create_waterfall_chart(cvar99_labels, cvar99_values, cVaR_99,
-                                                    "cVaR (99%) Contributions by Instrument", include_diversification=use_diversification_99)
                 # ---------------------------
                 # Display the charts and metrics.
                 # ---------------------------
@@ -675,7 +661,6 @@ def main():
                     )
                 else:
                     st.write("No detailed contributions table to display.")
-
 if __name__ == '__main__':
     main()
 
