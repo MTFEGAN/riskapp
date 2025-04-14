@@ -475,7 +475,11 @@ def main():
                     st.warning("Volatility is NaN.")
                     st.stop()
 
-                expanded_volatilities = expanded_positions_vector.index.get_level_values('Instrument').map(volatilities).to_series(index=expanded_positions_vector.index)
+                # Map each instrument to its volatility by converting the instrument index to a series first.
+                expanded_vols = pd.Series(expanded_positions_vector.index.get_level_values('Instrument'))
+                expanded_volatilities = expanded_vols.map(volatilities)
+                expanded_volatilities.index = expanded_positions_vector.index
+
                 standalone_volatilities = expanded_positions_vector.abs() * expanded_volatilities
                 marginal_contributions = expanded_cov_matrix.dot(expanded_positions_vector)
                 contribution_to_variance = expanded_positions_vector * marginal_contributions
@@ -520,16 +524,14 @@ def main():
                         if not price_returns_var.empty:
                             portfolio_returns_var = price_returns_var.dot(positions_for_var)
                             if not portfolio_returns_var.empty:
-                                # Compute portfolio VaR and cVaR (losses are positive)
                                 VaR_95 = -np.percentile(portfolio_returns_var, 5)
                                 VaR_99 = -np.percentile(portfolio_returns_var, 1)
                                 cVaR_95 = -portfolio_returns_var[portfolio_returns_var <= -VaR_95].mean() if (portfolio_returns_var <= -VaR_95).any() else np.nan
                                 cVaR_99 = -portfolio_returns_var[portfolio_returns_var <= -VaR_99].mean() if (portfolio_returns_var <= -VaR_99).any() else np.nan
 
                 # --- Compute instrument contributions to portfolio cVaR ---
-                # Instead of computing standalone instrument cVaRs, we now look at the days when the portfolio reaches its cVaR level.
-                # For each instrument, we compute the loss series as: loss = - (position × instrument return)
-                # and then average that loss over the extreme days.
+                # Now, we look at the days when the portfolio reaches its cVaR levels
+                # and compute the average loss of each instrument on those extreme days.
                 if not portfolio_returns_var.empty:
                     extreme_mask_95 = portfolio_returns_var <= -VaR_95
                     extreme_mask_99 = portfolio_returns_var <= -VaR_99
@@ -548,7 +550,6 @@ def main():
                 cvar95_items = sorted(instrument_contrib_95.items(), key=lambda x: x[1] if x[1] is not None else 0, reverse=True)
                 cvar95_labels = [item[0] for item in cvar95_items]
                 cvar95_values = [item[1] for item in cvar95_items]
-                # Check if there is any reconciliation gap due to rounding; ideally sum should equal portfolio cVaR.
                 diff_95 = cVaR_95 - sum([v for v in cvar95_values if v is not None])
                 use_diversification_95 = abs(diff_95) > 1e-6
 
@@ -697,4 +698,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
