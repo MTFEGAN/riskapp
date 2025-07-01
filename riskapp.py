@@ -23,7 +23,6 @@ def load_historical_data(excel_file):
         df = pd.concat(df_list, axis=1)
         if not pd.api.types.is_datetime64_any_dtype(df.index):
             df.index = pd.to_datetime(df.index)
-        # remove weekends
         df = df[~df.index.dayofweek.isin([5,6])]
         return df
     except Exception as e:
@@ -103,9 +102,8 @@ def create_waterfall_chart(labels, values, total, title, include_diversification
     return fig
 
 # ── Instrument-Country Mapping ────────────────────────────────────────────────
-
 instrument_country = {
-    "AU 3Y Future":"AU", "AU 10Y Future":"AU", "US 2Y Future":"US", "US 5Y Future":"US",
+    "AU 3Y Future":"AU","AU 10Y Future":"AU","US 2Y Future":"US","US 5Y Future":"US",
     "US 10Y Future":"US","US 10Y Ultra Future":"US","US 30Y Future":"US","DE 2Y Future":"DE",
     "DE 5Y Future":"DE","DE 10Y Future":"DE","UK 10Y Future":"UK","IT 10Y Future":"IT",
     "CA 10Y Future":"CA","JP 10Y Future":"JP","CH 1Y Swap":"CH","AU 2Y Swap":"AU",
@@ -161,7 +159,6 @@ def main():
     # --- Input Positions Tab ---
     with tab_pos:
         st.header("🔄 Input Positions")
-        # Define instruments_data for DM/EM split
         instruments_data = pd.DataFrame({
             "Ticker": [
                 "GACGB2 Index","GACGB10 Index","TUAFWD Comdty","FVAFWD Comdty","TYAFWD Comdty",
@@ -198,6 +195,7 @@ def main():
                 ["DM"]*6 + ["EM"]*8 + ["DM"]*14 + ["EM"]*7 + ["DM"]*3
             )
         })
+
         dm_insts = instruments_data[instruments_data['Portfolio']=="DM"]['Instrument Name'].tolist()
         em_insts = instruments_data[instruments_data['Portfolio']=="EM"]['Instrument Name'].tolist()
 
@@ -229,16 +227,40 @@ def main():
     # --- Trade Definitions Tab ---
     with tab_trades:
         st.header("🛠 Trade Definitions")
-        trades_df = pd.DataFrame(columns=["Trade Name","Instrument","Position Type","Position"])
-        trade_defs = st.experimental_data_editor(
-            trades_df,
-            num_rows="dynamic",
-            column_config={
-                "Instrument": st.column_config.Selectbox("Instrument", options=available_instruments),
-                "Position Type": st.column_config.Selectbox("Position Type", options=["Outright","Curve","Spread"])
-            },
-            use_container_width=True
+
+        # manage in session state so that add/delete persists
+        if 'trade_defs' not in st.session_state:
+            st.session_state.trade_defs = pd.DataFrame(columns=["Trade Name","Instrument","Position Type","Position"])
+
+        if st.button("➕ Add blank trade row"):
+            st.session_state.trade_defs = st.session_state.trade_defs.append(
+                {"Trade Name":"","Instrument":available_instruments[0],"Position Type":"Outright","Position":0.0},
+                ignore_index=True
+            )
+        if st.button("❌ Delete selected rows"):
+            selected = st.session_state.trade_defs.get("_selected",[])
+            if selected:
+                st.session_state.trade_defs = st.session_state.trade_defs.drop(selected).reset_index(drop=True)
+
+        # show editable grid with dropdowns
+        gb_tr = GridOptionsBuilder.from_dataframe(st.session_state.trade_defs)
+        gb_tr.configure_default_column(editable=True, resizable=True)
+        gb_tr.configure_column("Instrument", 
+            cellEditor="agSelectCellEditor", cellEditorParams={"values":available_instruments})
+        gb_tr.configure_column("Position Type",
+            cellEditor="agSelectCellEditor", cellEditorParams={"values":["Outright","Curve","Spread"]})
+        gb_tr.configure_selection(selection_mode="multiple", use_checkbox=True)
+        grid = AgGrid(
+            st.session_state.trade_defs,
+            gridOptions=gb_tr.build(),
+            enable_enterprise_modules=False,
+            update_mode="MODEL_CHANGED",
+            fit_columns_on_grid_load=True,
+            height=300
         )
+        # save selections & data
+        st.session_state.trade_defs = pd.DataFrame(grid["data"])
+        st.session_state.trade_defs["_selected"] = [row["_selectedRowNodeInfo"]["nodeId"] for row in grid["selected_rows"]]
 
     # --- Settings Tab ---
     with tab_settings:
@@ -274,160 +296,144 @@ def main():
             beta_win = dc.tail(vol_lookback)
 
             # Build positions vector
-            pos_dm['Portfolio'] = "DM"
-            pos_em['Portfolio'] = "EM"
-            all_pos = pd.concat([pos_dm, pos_em], ignore_index=True)
-            legs = []
+            pos_dm['Portfolio']="DM"; pos_em['Portfolio']="EM"
+            all_pos=pd.concat([pos_dm,pos_em],ignore_index=True)
+            legs=[]
             for _,r in all_pos.iterrows():
                 for pt in ["Outright","Curve","Spread"]:
-                    v = r[pt]
+                    v=r[pt]
                     if v!=0 and not pd.isna(v):
-                        legs.append({
-                            "Instrument": r["Instrument"],
-                            "Position Type": pt,
-                            "Position": v,
-                            "Portfolio": r["Portfolio"]
-                        })
-            legs_df = pd.DataFrame(legs)
+                        legs.append(dict(Instrument=r["Instrument"],
+                                         **{"Position Type":pt,"Position":v},
+                                         Portfolio=r["Portfolio"]))
+            legs_df=pd.DataFrame(legs)
             if legs_df.empty:
-                st.warning("No active positions.")
-                return
-            vec = legs_df.set_index(["Instrument","Position Type"])["Position"]
+                st.warning("No active positions."); return
+            vec=legs_df.set_index(["Instrument","Position Type"])["Position"]
 
-            # Subset covariance
-            insts = vec.index.get_level_values("Instrument").unique()
-            missing_inst = [i for i in insts if i not in cov.index]
+            # Covariance subset
+            insts=vec.index.get_level_values("Instrument").unique()
+            missing_inst=[i for i in insts if i not in cov.index]
             if missing_inst:
-                vec = vec.drop(labels=[(i,pt) for i in missing_inst for pt in ["Outright","Curve","Spread"]], errors="ignore")
-                insts = vec.index.get_level_values("Instrument").unique()
-            cov_sub = cov.loc[insts, insts]
-            order = vec.index.get_level_values("Instrument").to_numpy()
-            cov_vals = cov_sub.loc[order,order].values
-            cov_mat = pd.DataFrame(cov_vals, index=vec.index, columns=vec.index)
+                vec=vec.drop(labels=[(i,pt) for i in missing_inst for pt in ["Outright","Curve","Spread"]],
+                             errors="ignore")
+                insts=vec.index.get_level_values("Instrument").unique()
+            cov_sub=cov.loc[insts,insts]
+            order=vec.index.get_level_values("Instrument").to_numpy()
+            cov_vals=cov_sub.loc[order,order].values
+            cov_mat=pd.DataFrame(cov_vals,index=vec.index,columns=vec.index)
 
             # Portfolio var & vol
-            pvar = np.dot(vec.values, np.dot(cov_mat.values, vec.values))
-            pvol = np.sqrt(pvar) if pvar>0 else np.nan
+            pvar=np.dot(vec.values,np.dot(cov_mat.values,vec.values))
+            pvol=np.sqrt(pvar) if pvar>0 else np.nan
 
             # Contributions
-            inst_list = vec.index.get_level_values("Instrument")
-            e_vols = pd.Series(inst_list).map(vols.to_dict()); e_vols.index = vec.index
-            stand = vec.abs() * e_vols
-            marg = cov_mat.dot(vec)
-            cvar = vec * marg
-            cvol = cvar / pvol
-            pct = cvar / pvar * 100
+            inst_list=vec.index.get_level_values("Instrument")
+            e_vols=pd.Series(inst_list).map(vols.to_dict()); e_vols.index=vec.index
+            stand=vec.abs()*e_vols
+            marg=cov_mat.dot(vec)
+            cvar=vec*marg
+            cvol=cvar/pvol; pct=cvar/pvar*100
 
-            legs_df["Stand-alone Vol"] = stand.values
-            legs_df["Contr to Vol (bps)"] = cvol.values
-            legs_df["% Contr"] = pct.values
-            legs_df["1Y Inst Vol (bps)"] = e_vols.values
-            legs_df["Country"] = legs_df["Instrument"].apply(guess_country)
+            legs_df["Stand-alone Vol"]=stand.values
+            legs_df["Contr to Vol (bps)"]=cvol.values
+            legs_df["% Contr"]=pct.values
+            legs_df["1Y Inst Vol (bps)"]=e_vols.values
+            legs_df["Country"]=legs_df["Instrument"].apply(guess_country)
 
             # VaR & cVaR
-            pr_var = dc.tail(var_lookback)
-            pos_by_inst = vec.groupby("Instrument").sum()
-            common = pos_by_inst.index.intersection(pr_var.columns)
-            VaR95 = VaR99 = cVaR95 = cVaR99 = np.nan
+            pr_var=dc.tail(var_lookback)
+            pos_by_inst=vec.groupby("Instrument").sum()
+            common=pos_by_inst.index.intersection(pr_var.columns)
+            VaR95=VaR99=cVaR95=cVaR99=np.nan
             if not common.empty:
-                pr2 = pr_var[common]; pb = pos_by_inst.loc[common]
-                port_ret = pr2.dot(pb)
-                VaR95, VaR99 = -np.percentile(port_ret,[5,1])
-                if (port_ret<=-VaR95).any(): cVaR95 = -port_ret[port_ret<=-VaR95].mean()
-                if (port_ret<=-VaR99).any(): cVaR99 = -port_ret[port_ret<=-VaR99].mean()
+                pr2=pr_var[common]; pb=pos_by_inst.loc[common]
+                port_ret=pr2.dot(pb)
+                VaR95,VaR99=-np.percentile(port_ret,[5,1])
+                if (port_ret<=-VaR95).any(): cVaR95=-port_ret[port_ret<=-VaR95].mean()
+                if (port_ret<=-VaR99).any(): cVaR99=-port_ret[port_ret<=-VaR99].mean()
 
-            inst_c95 = {}; inst_c99 = {}
-            for inst, pos in pos_by_inst.items():
-                loss = -pr2[inst]*pos
-                mask95 = loss<=-VaR95; mask99 = loss<=-VaR99
-                inst_c95[inst] = loss[mask95].mean() if mask95.any() else np.nan
-                inst_c99[inst] = loss[mask99].mean() if mask99.any() else np.nan
+            inst_c95={}; inst_c99={}
+            for inst,pos in pos_by_inst.items():
+                loss=-pr2[inst]*pos
+                mask95=loss<=-VaR95; mask99=loss<=-VaR99
+                inst_c95[inst]=loss[mask95].mean() if mask95.any() else np.nan
+                inst_c99[inst]=loss[mask99].mean() if mask99.any() else np.nan
 
-            # By Trade
+            # By Trade Mode
             if mode=="By Trade":
-                td_clean = trade_defs.dropna(subset=["Trade Name","Instrument","Position Type","Position"]).copy()
-                td_clean["Position"] = td_clean["Position"].astype(float)
-                pos_keys = set(legs_df.apply(lambda r:(r["Instrument"],r["Position Type"],r["Position"]),axis=1))
-                trade_keys = set(td_clean.apply(lambda r:(r["Instrument"],r["Position Type"],r["Position"]),axis=1))
-                miss = pos_keys - trade_keys
+                td_clean=st.session_state.trade_defs.dropna(
+                    subset=["Trade Name","Instrument","Position Type","Position"]
+                ).copy()
+                td_clean["Position"]=td_clean["Position"].astype(float)
+                pos_keys=set(legs_df.apply(
+                    lambda r:(r["Instrument"],r["Position Type"],r["Position"]),axis=1
+                ))
+                trade_keys=set(td_clean.apply(
+                    lambda r:(r["Instrument"],r["Position Type"],r["Position"]),axis=1
+                ))
+                miss=pos_keys-trade_keys
                 if miss:
-                    st.error(f"Positions not in trades: {miss}")
-                    return
+                    st.error(f"Positions not in trades: {miss}"); return
 
-                merged = legs_df.merge(td_clean, on=["Instrument","Position Type","Position"],how="left")
-                trade_vol = merged.groupby("Trade Name")["Contr to Vol (bps)"].sum().reset_index()
-                fig_tv = create_waterfall_chart(
-                    trade_vol["Trade Name"].tolist(),
-                    trade_vol["Contr to Vol (bps)"].tolist(),
-                    pvol,
-                    "Volatility Contributions by Trade"
-                )
-                st.subheader("Volatility by Trade")
-                st.plotly_chart(fig_tv,use_container_width=True)
+                merged=legs_df.merge(td_clean,on=["Instrument","Position Type","Position"],how="left")
+                tv=merged.groupby("Trade Name")["Contr to Vol (bps)"].sum().reset_index()
+                fig_tv=create_waterfall_chart(tv["Trade Name"].tolist(),tv["Contr to Vol (bps)"].tolist(),pvol,"Vol by Trade")
+                st.subheader("Volatility by Trade"); st.plotly_chart(fig_tv,use_container_width=True)
 
-                idx_map = td_clean.set_index(["Instrument","Position Type","Position"])["Trade Name"].to_dict()
-                t_c95={}; t_c99={}
+                idx_map=td_clean.set_index(["Instrument","Position Type","Position"])["Trade Name"].to_dict()
+                t95={};t99={}
                 for inst,con in inst_c95.items():
                     for (i,pt,pos),tn in idx_map.items():
-                        if i==inst:
-                            t_c95.setdefault(tn,0)
-                            t_c95[tn]+=con
+                        if i==inst: t95.setdefault(tn,0); t95[tn]+=con
                 for inst,con in inst_c99.items():
                     for (i,pt,pos),tn in idx_map.items():
-                        if i==inst:
-                            t_c99.setdefault(tn,0)
-                            t_c99[tn]+=con
-                fig_t95 = create_waterfall_chart(list(t_c95.keys()),list(t_c95.values()),cVaR95,"cVaR95 by Trade")
-                fig_t99 = create_waterfall_chart(list(t_c99.keys()),list(t_c99.values()),cVaR99,"cVaR99 by Trade")
-                st.subheader("cVaR(95%) by Trade"); st.plotly_chart(fig_t95,use_container_width=True)
-                st.subheader("cVaR(99%) by Trade"); st.plotly_chart(fig_t99,use_container_width=True)
+                        if i==inst: t99.setdefault(tn,0); t99[tn]+=con
+                fig_t95=create_waterfall_chart(list(t95.keys()),list(t95.values()),cVaR95,"cVaR95 by Trade")
+                fig_t99=create_waterfall_chart(list(t99.keys()),list(t99.values()),cVaR99,"cVaR99 by Trade")
+                st.subheader("cVaR (95%) by Trade"); st.plotly_chart(fig_t95,use_container_width=True)
+                st.subheader("cVaR (99%) by Trade"); st.plotly_chart(fig_t99,use_container_width=True)
 
-            # By Breakdown
+            # By Breakdown Mode
             if mode=="By Breakdown":
-                fig_vi = create_waterfall_chart(
+                fig_vi=create_waterfall_chart(
                     legs_df["Instrument"].tolist(),
                     legs_df["Contr to Vol (bps)"].tolist(),
-                    pvol,
-                    "Volatility Contributions by Instrument"
+                    pvol,"Vol by Instrument"
                 )
-                st.subheader("Volatility by Instrument")
-                st.plotly_chart(fig_vi,use_container_width=True)
-
-                cb = legs_df.groupby(["Country","Position Type"])["Contr to Vol (bps)"].sum().reset_index()
-                cb["Group"] = cb["Country"] + " - " + cb["Position Type"]
-                cb["abs"] = cb["Contr to Vol (bps)"].abs()
-                cb = cb.sort_values("abs",ascending=False)
-                fig_cb = create_waterfall_chart(cb["Group"].tolist(),cb["Contr to Vol (bps)"].tolist(),pvol,"Vol by Country/Bucket")
-                st.subheader("Volatility by Country/Bucket")
-                st.plotly_chart(fig_cb,use_container_width=True)
+                st.subheader("Volatility by Instrument"); st.plotly_chart(fig_vi,use_container_width=True)
+                cb=legs_df.groupby(["Country","Position Type"])["Contr to Vol (bps)"].sum().reset_index()
+                cb["Group"]=cb["Country"]+" - "+cb["Position Type"]
+                cb["abs"]=cb["Contr to Vol (bps)"].abs()
+                cb=cb.sort_values("abs",ascending=False)
+                fig_cb=create_waterfall_chart(cb["Group"].tolist(),cb["Contr to Vol (bps)"].tolist(),pvol,"Vol by Country/Bucket")
+                st.subheader("Volatility by Country/Bucket"); st.plotly_chart(fig_cb,use_container_width=True)
                 st.dataframe(cb[["Country","Position Type","Contr to Vol (bps)"]])
 
-            # Metrics and tables
-            m1,m2,m3,m4 = st.columns(4)
-            m1.metric("Total Portfolio Volatility",fmt_val(pvol))
-            m2.metric("Daily VaR (95%)",fmt_val(VaR95))
-            m3.metric("Daily VaR (99%)",fmt_val(VaR99))
-            m4.metric("Daily cVaR (95%)",fmt_val(cVaR95))
+            # Metrics & Tables
+            c1,c2,c3,c4=st.columns(4)
+            c1.metric("Total Volatility",fmt_val(pvol))
+            c2.metric("VaR 95%",fmt_val(VaR95))
+            c3.metric("VaR 99%",fmt_val(VaR99))
+            c4.metric("cVaR 95%",fmt_val(cVaR95))
 
-            cdf = pd.DataFrame({
+            cdf=pd.DataFrame({
                 "Instrument":list(inst_c95.keys()),
-                "cVaR 95":[inst_c95[i] for i in inst_c95],
-                "cVaR 99":[inst_c99[i] for i in inst_c99]
+                "cVaR95":[inst_c95[i] for i in inst_c95],
+                "cVaR99":[inst_c99[i] for i in inst_c99]
             })
-            cdf_m = cdf.melt(id_vars="Instrument",value_vars=["cVaR 95","cVaR 99"],var_name="Confidence Level",value_name="cVaR")
-            fig_ic = px.bar(cdf_m,x="Instrument",y="cVaR",color="Confidence Level",barmode="group",title="Standalone Instrument cVaR")
-            st.subheader("Standalone Instrument cVaR")
-            st.plotly_chart(fig_ic,use_container_width=True)
+            cm=cdf.melt(id_vars="Instrument",value_vars=["cVaR95","cVaR99"],var_name="Lvl",value_name="cVaR")
+            fig_ic=px.bar(cm,x="Instrument",y="cVaR",color="Lvl",barmode="group",title="Standalone cVaR")
+            st.subheader("Standalone Instrument cVaR"); st.plotly_chart(fig_ic,use_container_width=True)
 
             st.subheader("Detailed Risk Contributions")
             st.dataframe(legs_df[[
-                "Instrument","Position Type","Position",
-                "Stand-alone Vol","1Y Inst Vol (bps)",
-                "Contr to Vol (bps)","% Contr","Country","Portfolio"
+                "Instrument","Position Type","Position","Stand-alone Vol",
+                "1Y Inst Vol (bps)","Contr to Vol (bps)","% Contr","Country","Portfolio"
             ]].round(4),use_container_width=True)
 
-            csv = legs_df.to_csv(index=False).encode("utf-8")
-            st.download_button("📥 Download CSV", data=csv, file_name="risk_contributions.csv", mime="text/csv")
+            csv=legs_df.to_csv(index=False).encode("utf-8")
+            st.download_button("📥 Download CSV",data=csv,file_name="risk_contributions.csv",mime="text/csv")
 
-if __name__ == "__main__":
+if __name__=="__main__":
     main()
