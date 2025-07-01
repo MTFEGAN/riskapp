@@ -238,11 +238,18 @@ def main():
 
         # Add / Delete buttons
         if st.button("➕ Add blank trade row"):
-            st.session_state.trade_defs = st.session_state.trade_defs.append(
-                {"Trade Name":"","Instrument":available_instruments[0],
-                 "Position Type":"Outright","Position":0.0},
+            # **FIX**: use concat instead of append
+            new_row = pd.DataFrame([{
+                "Trade Name": "",
+                "Instrument": available_instruments[0],
+                "Position Type": "Outright",
+                "Position": 0.0
+            }])
+            st.session_state.trade_defs = pd.concat(
+                [st.session_state.trade_defs, new_row],
                 ignore_index=True
             )
+
         if st.button("❌ Delete selected rows"):
             if st.session_state.selected_indices:
                 st.session_state.trade_defs = (
@@ -258,12 +265,12 @@ def main():
         gb_tr.configure_column(
             "Instrument",
             cellEditor="agSelectCellEditor",
-            cellEditorParams={"values":available_instruments}
+            cellEditorParams={"values": available_instruments}
         )
         gb_tr.configure_column(
             "Position Type",
             cellEditor="agSelectCellEditor",
-            cellEditorParams={"values":["Outright","Curve","Spread"]}
+            cellEditorParams={"values": ["Outright","Curve","Spread"]}
         )
         gb_tr.configure_selection(selection_mode="multiple", use_checkbox=True)
 
@@ -277,7 +284,7 @@ def main():
         )
 
         # **FIX**: guard against None
-        grid_data = grid["data"]
+        grid_data = grid.get("data", [])
         selected_rows = grid.get("selected_rows") or []
         st.session_state.trade_defs = pd.DataFrame(grid_data)
         st.session_state.selected_indices = [
