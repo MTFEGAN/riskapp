@@ -225,22 +225,20 @@ def main():
             )
             st.session_state.selected_indices = []
 
-        # Add / Delete / Save buttons
+        # Add / Delete / Save controls
         col_add, col_del, col_save = st.columns(3)
-
         with col_add:
             if st.button("➕ Add blank trade row"):
-                new = pd.DataFrame([{
+                new_row = pd.DataFrame([{
                     "Trade Name": "",
                     "Instrument": available_instruments[0],
                     "Position Type": "Outright",
                     "Position": 0.0
                 }])
                 st.session_state.trade_defs = pd.concat(
-                    [st.session_state.trade_defs, new],
+                    [st.session_state.trade_defs, new_row],
                     ignore_index=True
                 )
-
         with col_del:
             if st.button("❌ Delete selected rows") and st.session_state.selected_indices:
                 st.session_state.trade_defs = (
@@ -249,9 +247,26 @@ def main():
                     .reset_index(drop=True)
                 )
                 st.session_state.selected_indices = []
+        with col_save:
+            st.markdown("Click **Save Trades** after editing below")
+            if st.button("💾 Save Trades"):
+                data = grid_response.get("data", [])
+                if data:
+                    df_new = (
+                        pd.DataFrame(data)
+                        .sort_values("row_id")
+                        .drop(columns="row_id")
+                        .reset_index(drop=True)
+                    )
+                    st.session_state.trade_defs = df_new
+                sel = grid_response.get("selected_rows") or []
+                st.session_state.selected_indices = [int(r["row_id"]) for r in sel]
 
-        # Prepare DataFrame for grid with row index
-        df_for_grid = st.session_state.trade_defs.reset_index().rename(columns={'index':'__row_index__'})
+                st.success("Trades updated.")
+
+        # Prepare DataFrame with a persistent row_id
+        df_for_grid = st.session_state.trade_defs.copy()
+        df_for_grid['row_id'] = df_for_grid.index
 
         # Build AgGrid
         gb = GridOptionsBuilder.from_dataframe(df_for_grid)
@@ -271,24 +286,11 @@ def main():
         grid_response = AgGrid(
             df_for_grid,
             gridOptions=gb.build(),
-            update_mode=GridUpdateMode.MANUAL,
+            update_mode=GridUpdateMode.STOP_EDITING,
             fit_columns_on_grid_load=True,
             height=300,
             key="trade_defs_grid"
         )
-
-        # Commit edits when user clicks "Save Trades"
-        with col_save:
-            if st.button("💾 Save Trades"):
-                data = grid_response.get("data", [])
-                if data:
-                    df_new = pd.DataFrame(data).drop(columns="__row_index__")
-                    st.session_state.trade_defs = df_new
-                sel = grid_response.get("selected_rows") or []
-                st.session_state.selected_indices = [
-                    int(r["__row_index__"]) for r in sel if "__row_index__" in r
-                ]
-                st.success("Trades updated.")
 
     # --- Settings Tab ---
     with tab_settings:
@@ -362,17 +364,12 @@ def main():
             pvol = np.sqrt(pvar) if pvar > 0 else np.nan
 
             # Contributions
-            inst_list = vec.index.get_level_values("Instrument")
-            e_vols = pd.Series(inst_list).map(vols.to_dict()); e_vols.index = vec.index
             marg = cov_mat.dot(vec)
             cvar = vec * marg
             cvol = cvar / pvol
             pct = cvar / pvar * 100
 
-            legs_df["Stand-alone Vol"] = vec.abs() * e_vols
             legs_df["Contr to Vol (bps)"] = cvol.values
-            legs_df["% Contr"] = pct.values
-            legs_df["1Y Inst Vol (bps)"] = e_vols.values
             legs_df["Country"] = legs_df["Instrument"].apply(guess_country)
 
             # VaR & cVaR
@@ -404,31 +401,6 @@ def main():
                     subset=["Trade Name", "Instrument", "Position Type", "Position"]
                 ).copy()
                 td_clean["Position"] = td_clean["Position"].astype(float)
-                pos_keys = set(legs_df.apply(
-                    lambda r: (r["Instrument"], r["Position Type"], r["Position"]), axis=1
-                ))
-                trade_keys = set(td_clean.apply(
-                    lambda r: (r["Instrument"], r["Position Type"], r["Position"]), axis=1
-                ))
-                miss = pos_keys - trade_keys
-                if miss:
-                    st.error(f"Positions not in trades: {miss}")
-                    return
-
-                merged = legs_df.merge(td_clean,
-                    on=["Instrument", "Position Type", "Position"],
-                    how="left"
-                )
-                tv = merged.groupby("Trade Name")["Contr to Vol (bps)"].sum().reset_index()
-                fig_tv = create_waterfall_chart(
-                    tv["Trade Name"].tolist(),
-                    tv["Contr to Vol (bps)"].tolist(),
-                    pvol,
-                    "Volatility by Trade"
-                )
-                st.subheader("Volatility by Trade")
-                st.plotly_chart(fig_tv, use_container_width=True)
-
                 idx_map = td_clean.set_index(
                     ["Instrument", "Position Type", "Position"]
                 )["Trade Name"].to_dict()
@@ -512,8 +484,7 @@ def main():
             st.subheader("Detailed Risk Contributions")
             st.dataframe(
                 legs_df[[
-                    "Instrument","Position Type","Position","Stand-alone Vol",
-                    "1Y Inst Vol (bps)","Contr to Vol (bps)","% Contr","Country","Portfolio"
+                    "Instrument","Position Type","Position","Contr to Vol (bps)","Country","Portfolio"
                 ]].round(4),
                 use_container_width=True
             )
