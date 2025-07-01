@@ -118,7 +118,7 @@ def create_waterfall_chart(labels, values, total, title, include_diversification
     fig.update_layout(title=title, waterfallgroupgap=0.3)
     return fig
 
-# Instrument-country mapping
+# Comprehensive instrument-country mapping
 instrument_country = {
     "AU 3Y Future": "AU", "AU 10Y Future": "AU", "US 2Y Future": "US", "US 5Y Future": "US",
     "US 10Y Future": "US", "US 10Y Ultra Future": "US", "US 30Y Future": "US", "DE 2Y Future": "DE",
@@ -157,9 +157,9 @@ def main():
             "USSW5 Curncy", "EUSA5 Curncy", "BPSWS5 BGN Curncy", "NDSWAP5 BGN Curncy",
             "I39305Y Index", "MPSW5E Curncy", "MPSWF5E Curncy", "SASW5 Curncy",
             "CKSW5 Curncy", "PZSW5 Curncy", "KWSWNI5 Curncy", "CCSWNI5 Curncy",
-            "JYSO5 Curncy", "ADSW10 Curncy", "CDSW10 Curncy", "USSW10 Curncy",
+            "JYSO5 Curncy", "ADSW10 Curncy", "CDSO10 Curncy", "USSW10 Curncy",
             "EUSA10 Curncy", "BPSWS10 BGN Curncy", "NDSWAP10 BGN Curncy",
-            "ADSW30 Curncy", "CDSW30 Curncy", "USSW30 Curncy", "EUSA30 Curncy",
+            "ADSW30 Curncy", "CDSO30 Curncy", "USSW30 Curncy", "EUSA30 Curncy",
             "BPSWS30 BGN Curncy", "NDSWAP30 BGN Curncy", "JYSO30 Curncy",
             "MPSW10J BGN Curncy", "MPSWF10J BGN Curncy", "SASW10 Curncy",
             "CKSW10 BGN Curncy", "PZSW10 BGN Curncy", "KWSWNI10 BGN Curncy",
@@ -183,7 +183,7 @@ def main():
             "NK 10Y Swap"
         ],
         "Portfolio": (
-            ["DM"]*14 + ["EM"] + ["DM"]*6 + ["EM"]*8 +
+            ["DM"]*14 + ["EM"]*1 + ["DM"]*6 + ["EM"]*8 +
             ["DM"]*6 + ["EM"]*8 + ["DM"]*14 + ["EM"]*7 + ["DM"]*3
         )
     })
@@ -261,8 +261,10 @@ def main():
     # Trade Definitions tab
     with tabs[2]:
         st.header("🛠 Trade Definitions")
-        default_trades = pd.DataFrame(columns=[
-            'Trade Name', 'Instrument', 'Position Type', 'Position'
+        # Pre-populate 4 blank rows so you can immediately start typing
+        default_trades = pd.DataFrame([
+            {'Trade Name':'', 'Instrument':'', 'Position Type':'', 'Position':np.nan}
+            for _ in range(4)
         ])
         gb_tr = GridOptionsBuilder.from_dataframe(default_trades)
         gb_tr.configure_default_column(editable=True, resizable=True)
@@ -520,7 +522,6 @@ def main():
                 st.subheader("Risk Attribution by Country & Bucket (Volatility)")
                 st.write("No country/bucket data to display.")
 
-            # cVaR by instrument
             fig_cvar95 = create_waterfall_chart(
                 list(instrument_contrib_95.keys()),
                 list(instrument_contrib_95.values()),
@@ -559,7 +560,6 @@ def main():
             st.subheader("Standalone Instrument cVaR (95% & 99%)")
             st.plotly_chart(fig_instrument_cvar, use_container_width=True)
 
-            # Metrics
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("📊 Total Portfolio Volatility", fmt_val(portfolio_volatility))
             m2.metric("📉 Daily VaR (95%)", fmt_val(VaR_95))
