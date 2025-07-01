@@ -102,6 +102,7 @@ def create_waterfall_chart(labels, values, total, title, include_diversification
     return fig
 
 # ── Instrument-Country Mapping ────────────────────────────────────────────────
+
 instrument_country = {
     "AU 3Y Future":"AU","AU 10Y Future":"AU","US 2Y Future":"US","US 5Y Future":"US",
     "US 10Y Future":"US","US 10Y Ultra Future":"US","US 30Y Future":"US","DE 2Y Future":"DE",
@@ -228,28 +229,44 @@ def main():
     with tab_trades:
         st.header("🛠 Trade Definitions")
 
-        # manage in session state so that add/delete persists
+        # initialize in session_state
         if 'trade_defs' not in st.session_state:
-            st.session_state.trade_defs = pd.DataFrame(columns=["Trade Name","Instrument","Position Type","Position"])
+            st.session_state.trade_defs = pd.DataFrame(
+                columns=["Trade Name","Instrument","Position Type","Position"]
+            )
+            st.session_state.selected_indices = []
 
+        # Add / Delete buttons
         if st.button("➕ Add blank trade row"):
             st.session_state.trade_defs = st.session_state.trade_defs.append(
-                {"Trade Name":"","Instrument":available_instruments[0],"Position Type":"Outright","Position":0.0},
+                {"Trade Name":"","Instrument":available_instruments[0],
+                 "Position Type":"Outright","Position":0.0},
                 ignore_index=True
             )
         if st.button("❌ Delete selected rows"):
-            selected = st.session_state.trade_defs.get("_selected",[])
-            if selected:
-                st.session_state.trade_defs = st.session_state.trade_defs.drop(selected).reset_index(drop=True)
+            if st.session_state.selected_indices:
+                st.session_state.trade_defs = (
+                    st.session_state.trade_defs
+                    .drop(index=st.session_state.selected_indices)
+                    .reset_index(drop=True)
+                )
+                st.session_state.selected_indices = []
 
-        # show editable grid with dropdowns
+        # Editable AgGrid with dropdowns
         gb_tr = GridOptionsBuilder.from_dataframe(st.session_state.trade_defs)
         gb_tr.configure_default_column(editable=True, resizable=True)
-        gb_tr.configure_column("Instrument", 
-            cellEditor="agSelectCellEditor", cellEditorParams={"values":available_instruments})
-        gb_tr.configure_column("Position Type",
-            cellEditor="agSelectCellEditor", cellEditorParams={"values":["Outright","Curve","Spread"]})
+        gb_tr.configure_column(
+            "Instrument",
+            cellEditor="agSelectCellEditor",
+            cellEditorParams={"values":available_instruments}
+        )
+        gb_tr.configure_column(
+            "Position Type",
+            cellEditor="agSelectCellEditor",
+            cellEditorParams={"values":["Outright","Curve","Spread"]}
+        )
         gb_tr.configure_selection(selection_mode="multiple", use_checkbox=True)
+
         grid = AgGrid(
             st.session_state.trade_defs,
             gridOptions=gb_tr.build(),
@@ -258,9 +275,14 @@ def main():
             fit_columns_on_grid_load=True,
             height=300
         )
-        # save selections & data
-        st.session_state.trade_defs = pd.DataFrame(grid["data"])
-        st.session_state.trade_defs["_selected"] = [row["_selectedRowNodeInfo"]["nodeId"] for row in grid["selected_rows"]]
+
+        # **FIX**: guard against None
+        grid_data = grid["data"]
+        selected_rows = grid.get("selected_rows") or []
+        st.session_state.trade_defs = pd.DataFrame(grid_data)
+        st.session_state.selected_indices = [
+            int(r["_selectedRowNodeInfo"]["nodeId"]) for r in selected_rows
+        ]
 
     # --- Settings Tab ---
     with tab_settings:
@@ -303,9 +325,12 @@ def main():
                 for pt in ["Outright","Curve","Spread"]:
                     v=r[pt]
                     if v!=0 and not pd.isna(v):
-                        legs.append(dict(Instrument=r["Instrument"],
-                                         **{"Position Type":pt,"Position":v},
-                                         Portfolio=r["Portfolio"]))
+                        legs.append({
+                            "Instrument":r["Instrument"],
+                            "Position Type":pt,
+                            "Position":v,
+                            "Portfolio":r["Portfolio"]
+                        })
             legs_df=pd.DataFrame(legs)
             if legs_df.empty:
                 st.warning("No active positions."); return
@@ -315,8 +340,10 @@ def main():
             insts=vec.index.get_level_values("Instrument").unique()
             missing_inst=[i for i in insts if i not in cov.index]
             if missing_inst:
-                vec=vec.drop(labels=[(i,pt) for i in missing_inst for pt in ["Outright","Curve","Spread"]],
-                             errors="ignore")
+                vec=vec.drop(
+                    labels=[(i,pt) for i in missing_inst for pt in ["Outright","Curve","Spread"]],
+                    errors="ignore"
+                )
                 insts=vec.index.get_level_values("Instrument").unique()
             cov_sub=cov.loc[insts,insts]
             order=vec.index.get_level_values("Instrument").to_numpy()
@@ -378,19 +405,21 @@ def main():
 
                 merged=legs_df.merge(td_clean,on=["Instrument","Position Type","Position"],how="left")
                 tv=merged.groupby("Trade Name")["Contr to Vol (bps)"].sum().reset_index()
-                fig_tv=create_waterfall_chart(tv["Trade Name"].tolist(),tv["Contr to Vol (bps)"].tolist(),pvol,"Vol by Trade")
+                fig_tv=create_waterfall_chart(tv["Trade Name"].tolist(),tv["Contr to Vol (bps)"].tolist(),pvol,"Volatility by Trade")
                 st.subheader("Volatility by Trade"); st.plotly_chart(fig_tv,use_container_width=True)
 
                 idx_map=td_clean.set_index(["Instrument","Position Type","Position"])["Trade Name"].to_dict()
-                t95={};t99={}
+                t95={}; t99={}
                 for inst,con in inst_c95.items():
                     for (i,pt,pos),tn in idx_map.items():
-                        if i==inst: t95.setdefault(tn,0); t95[tn]+=con
+                        if i==inst:
+                            t95.setdefault(tn,0); t95[tn]+=con
                 for inst,con in inst_c99.items():
                     for (i,pt,pos),tn in idx_map.items():
-                        if i==inst: t99.setdefault(tn,0); t99[tn]+=con
-                fig_t95=create_waterfall_chart(list(t95.keys()),list(t95.values()),cVaR95,"cVaR95 by Trade")
-                fig_t99=create_waterfall_chart(list(t99.keys()),list(t99.values()),cVaR99,"cVaR99 by Trade")
+                        if i==inst:
+                            t99.setdefault(tn,0); t99[tn]+=con
+                fig_t95=create_waterfall_chart(list(t95.keys()),list(t95.values()),cVaR95,"cVaR (95%) by Trade")
+                fig_t99=create_waterfall_chart(list(t99.keys()),list(t99.values()),cVaR99,"cVaR (99%) by Trade")
                 st.subheader("cVaR (95%) by Trade"); st.plotly_chart(fig_t95,use_container_width=True)
                 st.subheader("cVaR (99%) by Trade"); st.plotly_chart(fig_t99,use_container_width=True)
 
@@ -399,41 +428,47 @@ def main():
                 fig_vi=create_waterfall_chart(
                     legs_df["Instrument"].tolist(),
                     legs_df["Contr to Vol (bps)"].tolist(),
-                    pvol,"Vol by Instrument"
+                    pvol,"Volatility by Instrument"
                 )
                 st.subheader("Volatility by Instrument"); st.plotly_chart(fig_vi,use_container_width=True)
                 cb=legs_df.groupby(["Country","Position Type"])["Contr to Vol (bps)"].sum().reset_index()
                 cb["Group"]=cb["Country"]+" - "+cb["Position Type"]
                 cb["abs"]=cb["Contr to Vol (bps)"].abs()
                 cb=cb.sort_values("abs",ascending=False)
-                fig_cb=create_waterfall_chart(cb["Group"].tolist(),cb["Contr to Vol (bps)"].tolist(),pvol,"Vol by Country/Bucket")
+                fig_cb=create_waterfall_chart(cb["Group"].tolist(),cb["Contr to Vol (bps)"].tolist(),pvol,"Volatility by Country/Bucket")
                 st.subheader("Volatility by Country/Bucket"); st.plotly_chart(fig_cb,use_container_width=True)
                 st.dataframe(cb[["Country","Position Type","Contr to Vol (bps)"]])
 
             # Metrics & Tables
             c1,c2,c3,c4=st.columns(4)
-            c1.metric("Total Volatility",fmt_val(pvol))
-            c2.metric("VaR 95%",fmt_val(VaR95))
-            c3.metric("VaR 99%",fmt_val(VaR99))
-            c4.metric("cVaR 95%",fmt_val(cVaR95))
+            c1.metric("Total Portfolio Volatility",fmt_val(pvol))
+            c2.metric("Daily VaR (95%)",fmt_val(VaR95))
+            c3.metric("Daily VaR (99%)",fmt_val(VaR99))
+            c4.metric("Daily cVaR (95%)",fmt_val(cVaR95))
 
             cdf=pd.DataFrame({
                 "Instrument":list(inst_c95.keys()),
-                "cVaR95":[inst_c95[i] for i in inst_c95],
-                "cVaR99":[inst_c99[i] for i in inst_c99]
+                "cVaR 95":[inst_c95[i] for i in inst_c95],
+                "cVaR 99":[inst_c99[i] for i in inst_c99]
             })
-            cm=cdf.melt(id_vars="Instrument",value_vars=["cVaR95","cVaR99"],var_name="Lvl",value_name="cVaR")
-            fig_ic=px.bar(cm,x="Instrument",y="cVaR",color="Lvl",barmode="group",title="Standalone cVaR")
+            cdf_m = cdf.melt(
+                id_vars="Instrument", value_vars=["cVaR 95","cVaR 99"],
+                var_name="Confidence Level", value_name="cVaR"
+            )
+            fig_ic=px.bar(cdf_m, x="Instrument", y="cVaR", color="Confidence Level", barmode="group", title="Standalone Instrument cVaR")
             st.subheader("Standalone Instrument cVaR"); st.plotly_chart(fig_ic,use_container_width=True)
 
             st.subheader("Detailed Risk Contributions")
-            st.dataframe(legs_df[[
-                "Instrument","Position Type","Position","Stand-alone Vol",
-                "1Y Inst Vol (bps)","Contr to Vol (bps)","% Contr","Country","Portfolio"
-            ]].round(4),use_container_width=True)
+            st.dataframe(
+                legs_df[[
+                    "Instrument","Position Type","Position","Stand-alone Vol",
+                    "1Y Inst Vol (bps)","Contr to Vol (bps)","% Contr","Country","Portfolio"
+                ]].round(4),
+                use_container_width=True
+            )
 
             csv=legs_df.to_csv(index=False).encode("utf-8")
             st.download_button("📥 Download CSV",data=csv,file_name="risk_contributions.csv",mime="text/csv")
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
