@@ -118,24 +118,24 @@ def create_waterfall_chart(labels, values, total, title, include_diversification
     fig.update_layout(title=title, waterfallgroupgap=0.3)
     return fig
 
-# Comprehensive instrument-country mapping
+# Instrument-country mapping
 instrument_country = {
-    "AU 3Y Future": "AU", "AU 10Y Future": "AU", "US 2Y Future": "US", "US 5Y Future": "US", 
-    "US 10Y Future": "US", "US 10Y Ultra Future": "US", "US 30Y Future": "US", "DE 2Y Future": "DE", 
-    "DE 5Y Future": "DE", "DE 10Y Future": "DE", "UK 10Y Future": "UK", "IT 10Y Future": "IT", 
-    "CA 10Y Future": "CA", "JP 10Y Future": "JP", "CH 1Y Swap": "CH", "AU 2Y Swap": "AU", 
-    "CA 2Y Swap": "CA", "US 2Y Swap": "US", "DE 2Y Swap": "DE", "UK 2Y Swap": "UK", 
-    "NZ 2Y Swap": "NZ", "BR 2Y Swap": "BR", "MX 2Y Swap": "MX", "MX 2Y Swap OIS": "MX", 
-    "SA 2Y Swap": "SA", "CZ 2Y Swap": "CZ", "PO 2Y Swap": "PO", "SK 2Y Swap": "SK", 
-    "CH 2Y Swap": "CH", "AU 5Y Swap": "AU", "CA 5Y Swap": "CA", "US 5Y Swap": "US", 
-    "DE 5Y Swap": "DE", "UK 5Y Swap": "UK", "NZ 5Y Swap": "NZ", "BR 5Y Swap": "BR", 
-    "MX 5Y Swap": "MX", "MX 5Y Swap OIS": "MX", "SA 5Y Swap": "SA", "CZ 5Y Swap": "CZ", 
-    "PO 5Y Swap": "PO", "SK 5Y Swap": "SK", "CH 5Y Swap": "CH", "JP 5Y Swap": "JP", 
-    "AU 10Y Swap": "AU", "CA 10Y Swap": "CA", "US 10Y Swap": "US", "DE 10Y Swap": "DE", 
-    "UK 10Y Swap": "UK", "NZ 10Y Swap": "NZ", "AU 30Y Swap": "AU", "CA 30Y Swap": "CA", 
-    "US 30Y Swap": "US", "DE 30Y Swap": "DE", "UK 30Y Swap": "UK", "NZ 30Y Swap": "NZ", 
-    "JP 30Y Swap": "JP", "MX 10Y Swap": "MX", "MX 10Y Swap OIS": "MX", "SA 10Y Swap": "SA", 
-    "CZ 10Y Swap": "CZ", "PO 10Y Swap": "PO", "SK 10Y Swap": "SK", "CH 10Y Swap": "CH", 
+    "AU 3Y Future": "AU", "AU 10Y Future": "AU", "US 2Y Future": "US", "US 5Y Future": "US",
+    "US 10Y Future": "US", "US 10Y Ultra Future": "US", "US 30Y Future": "US", "DE 2Y Future": "DE",
+    "DE 5Y Future": "DE", "DE 10Y Future": "DE", "UK 10Y Future": "UK", "IT 10Y Future": "IT",
+    "CA 10Y Future": "CA", "JP 10Y Future": "JP", "CH 1Y Swap": "CH", "AU 2Y Swap": "AU",
+    "CA 2Y Swap": "CA", "US 2Y Swap": "US", "DE 2Y Swap": "DE", "UK 2Y Swap": "UK",
+    "NZ 2Y Swap": "NZ", "BR 2Y Swap": "BR", "MX 2Y Swap": "MX", "MX 2Y Swap OIS": "MX",
+    "SA 2Y Swap": "SA", "CZ 2Y Swap": "CZ", "PO 2Y Swap": "PO", "SK 2Y Swap": "SK",
+    "CH 2Y Swap": "CH", "AU 5Y Swap": "AU", "CA 5Y Swap": "CA", "US 5Y Swap": "US",
+    "DE 5Y Swap": "DE", "UK 5Y Swap": "UK", "NZ 5Y Swap": "NZ", "BR 5Y Swap": "BR",
+    "MX 5Y Swap": "MX", "MX 5Y Swap OIS": "MX", "SA 5Y Swap": "SA", "CZ 5Y Swap": "CZ",
+    "PO 5Y Swap": "PO", "SK 5Y Swap": "SK", "CH 5Y Swap": "CH", "JP 5Y Swap": "JP",
+    "AU 10Y Swap": "AU", "CA 10Y Swap": "CA", "US 10Y Swap": "US", "DE 10Y Swap": "DE",
+    "UK 10Y Swap": "UK", "NZ 10Y Swap": "NZ", "AU 30Y Swap": "AU", "CA 30Y Swap": "CA",
+    "US 30Y Swap": "US", "DE 30Y Swap": "DE", "UK 30Y Swap": "UK", "NZ 30Y Swap": "NZ",
+    "JP 30Y Swap": "JP", "MX 10Y Swap": "MX", "MX 10Y Swap OIS": "MX", "SA 10Y Swap": "SA",
+    "CZ 10Y Swap": "CZ", "PO 10Y Swap": "PO", "SK 10Y Swap": "SK", "CH 10Y Swap": "CH",
     "UK 10Y Swap Inf": "UK", "SW 10Y Swap": "SW", "NK 10Y Swap": "NK"
 }
 
@@ -146,7 +146,7 @@ def main():
     # Prepare instrument list and default positions
     instruments_data = pd.DataFrame({
         "Ticker": [
-            "GACGB2 Index", "GACGB10 Index", "TUAFWD Comdty", "FVAFWD Comdty", 
+            "GACGB2 Index", "GACGB10 Index", "TUAFWD Comdty", "FVAFWD Comdty",
             "TYAFWD Comdty", "UXYAFWD Comdty", "WNAFWD Comdty", "DUAFWD Comdty",
             "OEAFWD Comdty", "RXAFWD Comdty", "GAFWD Comdty", "IKAFWD Comdty",
             "CNAFWD Comdty", "JBAFWD Comdty", "CCSWNI1 Curncy", "ADSW2 Curncy",
@@ -155,11 +155,11 @@ def main():
             "SAFR1I2 BGN Curncy", "CKSW2 BGN Curncy", "PZSW2 BGN Curncy",
             "KWSWNI2 BGN Curncy", "CCSWNI2 CMPN Curncy", "ADSW5 Curncy", "CDSO5 Curncy",
             "USSW5 Curncy", "EUSA5 Curncy", "BPSWS5 BGN Curncy", "NDSWAP5 BGN Curncy",
-            "I39305Y Index", "MPSW5E Curncy", "MPSWF5E Curncy", "SASW5 Curncy", 
+            "I39305Y Index", "MPSW5E Curncy", "MPSWF5E Curncy", "SASW5 Curncy",
             "CKSW5 Curncy", "PZSW5 Curncy", "KWSWNI5 Curncy", "CCSWNI5 Curncy",
-            "JYSO5 Curncy", "ADSW10 Curncy", "CDSO10 Curncy", "USSW10 Curncy",
+            "JYSO5 Curncy", "ADSW10 Curncy", "CDSW10 Curncy", "USSW10 Curncy",
             "EUSA10 Curncy", "BPSWS10 BGN Curncy", "NDSWAP10 BGN Curncy",
-            "ADSW30 Curncy", "CDSO30 Curncy", "USSW30 Curncy", "EUSA30 Curncy",
+            "ADSW30 Curncy", "CDSW30 Curncy", "USSW30 Curncy", "EUSA30 Curncy",
             "BPSWS30 BGN Curncy", "NDSWAP30 BGN Curncy", "JYSO30 Curncy",
             "MPSW10J BGN Curncy", "MPSWF10J BGN Curncy", "SASW10 Curncy",
             "CKSW10 BGN Curncy", "PZSW10 BGN Curncy", "KWSWNI10 BGN Curncy",
@@ -183,11 +183,11 @@ def main():
             "NK 10Y Swap"
         ],
         "Portfolio": (
-            ["DM"]*14 + ["EM"]*1 +
-            ["DM"]*5 + ["EM"]*1 +
-            ["DM"]*55
+            ["DM"]*14 + ["EM"] + ["DM"]*6 + ["EM"]*8 +
+            ["DM"]*6 + ["EM"]*8 + ["DM"]*14 + ["EM"]*7 + ["DM"]*3
         )
     })
+
     dm_instruments = instruments_data[instruments_data['Portfolio']=='DM']['Instrument Name'].tolist()
     em_instruments = instruments_data[instruments_data['Portfolio']=='EM']['Instrument Name'].tolist()
     default_positions_dm = pd.DataFrame({
@@ -322,7 +322,7 @@ def main():
             covariance_matrix = calculate_covariance_matrix(daily_changes, volatility_lookback_days)
             beta_data_window = daily_changes.tail(volatility_lookback_days)
 
-            # --- Build positions vector ---
+            # Build positions vector
             pos_dm = pd.DataFrame(positions_data_dm).astype({
                 'Outright': float, 'Curve': float, 'Spread': float
             })
@@ -352,7 +352,7 @@ def main():
                 ['Instrument', 'Position Type']
             )['Position']
 
-            # --- Covariance submatrix ---
+            # Covariance submatrix
             instrs = expanded_positions_vector.index.get_level_values('Instrument').unique()
             missing_instruments = [
                 i for i in instrs if i not in covariance_matrix.index
@@ -370,14 +370,14 @@ def main():
                 cov_vals, index=expanded_positions_vector.index, columns=expanded_positions_vector.index
             )
 
-            # --- Portfolio variance & volatility ---
+            # Portfolio variance & volatility
             port_var = np.dot(
                 expanded_positions_vector.values,
                 np.dot(expanded_cov_matrix.values, expanded_positions_vector.values)
             )
-            portfolio_volatility = np.sqrt(port_var) if port_var>0 else np.nan
+            portfolio_volatility = np.sqrt(port_var) if port_var > 0 else np.nan
 
-            # --- Standalone & marginal contributions ---
+            # Standalone & marginal contributions
             insts = expanded_positions_vector.index.get_level_values('Instrument')
             exp_vols = pd.Series(insts).map(volatilities.to_dict())
             exp_vols.index = expanded_positions_vector.index
@@ -387,7 +387,7 @@ def main():
             contrib_vol = contrib_var / portfolio_volatility
             pct_contrib = contrib_var / port_var * 100
 
-            # --- Build risk contributions DataFrame ---
+            # Build risk contributions DataFrame
             rc = expanded_positions_data.copy()
             rc['Position Stand-alone Volatility'] = standalone_volatilities.values
             rc['Contribution to Volatility (bps)'] = contrib_vol.values
@@ -402,7 +402,7 @@ def main():
                 'Percent Contribution (%)','Country','Portfolio'
             ]].round(2)
 
-            # --- VaR & cVaR ---
+            # VaR & cVaR
             VaR_95=VaR_99=cVaR_95=cVaR_99=np.nan
             pr_var = daily_changes.tail(var_lookback_days)
             pos_for_var = expanded_positions_vector.groupby('Instrument').sum()
@@ -413,22 +413,22 @@ def main():
                 port_ret = pr_var.dot(pos_for_var)
                 VaR_95 = -np.percentile(port_ret,5)
                 VaR_99 = -np.percentile(port_ret,1)
-                if (port_ret<=-VaR_95).any():
-                    cVaR_95 = -port_ret[port_ret<=-VaR_95].mean()
-                if (port_ret<=-VaR_99).any():
-                    cVaR_99 = -port_ret[port_ret<=-VaR_99].mean()
+                if (port_ret <= -VaR_95).any():
+                    cVaR_95 = -port_ret[port_ret <= -VaR_95].mean()
+                if (port_ret <= -VaR_99).any():
+                    cVaR_99 = -port_ret[port_ret <= -VaR_99].mean()
 
-            # --- Instrument-level cVaR contributions ---
+            # Instrument-level cVaR contributions
             instrument_contrib_95 = {}
             instrument_contrib_99 = {}
             for instr, pos in pos_for_var.items():
-                loss = -pr_var[instr]*pos
-                mask95 = loss<=-VaR_95
-                mask99 = loss<=-VaR_99
+                loss = -pr_var[instr] * pos
+                mask95 = loss <= -VaR_95
+                mask99 = loss <= -VaR_99
                 instrument_contrib_95[instr] = loss[mask95].mean() if mask95.any() else np.nan
                 instrument_contrib_99[instr] = loss[mask99].mean() if mask99.any() else np.nan
 
-            # --- Enforce trade assignment ---
+            # Enforce trade assignment
             td = trade_defs.dropna(
                 subset=['Trade Name','Instrument','Position Type','Position']
             ).copy()
@@ -444,7 +444,7 @@ def main():
                 st.error(f"❌ The following positions are not assigned to trades: {missing}")
                 st.stop()
 
-            # --- Trade-level volatility contributions ---
+            # Trade-level volatility contributions
             trade_vol_df = (
                 risk_contributions_formatted
                 .merge(td[['Trade Name','Instrument','Position Type','Position']],
@@ -459,21 +459,20 @@ def main():
                 "Volatility Contributions by Trade"
             )
 
-            # --- Trade-level cVaR contributions ---
+            # Trade-level cVaR contributions
             instr_trade_map = td.set_index(
                 ['Instrument','Position Type','Position']
             )['Trade Name'].to_dict()
             trade_c95 = {}
             trade_c99 = {}
             for instr, contrib in instrument_contrib_95.items():
-                # find the matching (instr,pt,p) key in instr_trade_map
                 for key,val in instr_trade_map.items():
-                    if key[0]==instr:
-                        trade_c95[val] = trade_c95.get(val,0)+contrib
+                    if key[0] == instr:
+                        trade_c95[val] = trade_c95.get(val, 0) + contrib
             for instr, contrib in instrument_contrib_99.items():
                 for key,val in instr_trade_map.items():
-                    if key[0]==instr:
-                        trade_c99[val] = trade_c99.get(val,0)+contrib
+                    if key[0] == instr:
+                        trade_c99[val] = trade_c99.get(val, 0) + contrib
             fig_trade_c95 = create_waterfall_chart(
                 list(trade_c95.keys()), list(trade_c95.values()), cVaR_95,
                 "cVaR (95%) Contributions by Trade"
@@ -483,7 +482,7 @@ def main():
                 "cVaR (99%) Contributions by Trade"
             )
 
-            # --- Display trade-level charts ---
+            # Display trade-level charts
             st.subheader("Risk Attribution by Trade (Volatility)")
             st.plotly_chart(fig_trade_vol, use_container_width=True)
             st.subheader("cVaR (95%) Contributions by Trade")
@@ -491,7 +490,7 @@ def main():
             st.subheader("cVaR (99%) Contributions by Trade")
             st.plotly_chart(fig_trade_c99, use_container_width=True)
 
-            # --- Instrument-level charts & tables (original) ---
+            # Instrument-level charts & tables (original)
             fig_vol_inst = create_waterfall_chart(
                 risk_contributions_formatted['Instrument'].tolist(),
                 risk_contributions_formatted['Contribution to Volatility (bps)'].tolist(),
@@ -501,7 +500,6 @@ def main():
             st.subheader("Risk Attribution by Instrument (Volatility)")
             st.plotly_chart(fig_vol_inst, use_container_width=True)
 
-            # Country & bucket waterfall
             country_bucket = risk_contributions_formatted.groupby(
                 ['Country','Position Type']
             )['Contribution to Volatility (bps)'].sum().reset_index()
@@ -632,4 +630,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
